@@ -121,7 +121,6 @@ export async function POST(req: Request) {
       system: effectiveSystemPrompt,
       messages: modelMessages,
       temperature: 0.1, // Matches enterprise low temperature for strict grounding
-      maxTokens: 1024, // Maximum output length
 
       providerOptions: {
         ollama: {
