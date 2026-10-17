@@ -11,7 +11,7 @@ export interface TextSplitterOptions {
 
 export interface ChunkWithMetadata {
   content: string;
-  pageNumber: number;
+  pageNumber: number ;
   chunkIndex: number;
 }
 

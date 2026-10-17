@@ -1,123 +1,163 @@
-# Local RAG Document Search System
+<div align="center">
 
-A private, offline Retrieval-Augmented Generation (RAG) system for document search and intelligent question-answering. 
+# 🧠 Local Document AI & Search (RAG)
 
-This project runs **100% locally on your machine** using Next.js, an OCR pre-processing overlay, LangChain recursive text chunking, a lightweight local vector store, and Ollama with **Qwen 2.5**.
+### Enterprise-Grade, 100% Private Document Intelligence Running Entirely on Your Local Machine.
+
+[![Next.js](https://img.shields.io/badge/Next.js-16.4-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-Qwen_2.5_(3B)-white?style=for-the-badge&logo=ollama)](https://ollama.com/)
+[![Local Only](https://img.shields.io/badge/Privacy-100%25_Offline-emerald?style=for-the-badge&logo=shield)](https://github.com/)
+[![Apple Silicon](https://img.shields.io/badge/Optimized-Mac_M1%2FM2%2FM3-silver?style=for-the-badge&logo=apple)](https://apple.com/)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+
+<br />
+
+<p align="center">
+  <b>Talk to your PDFs, DOCX files, receipts, notes, and screenshots — completely offline.</b><br />
+  No cloud APIs. No recurring subscriptions. No data leaving your laptop.
+</p>
+
+</div>
 
 ---
 
-## ✨ Features
+## 🌟 Product Highlights
 
-- **Multimodal Document Ingestion:** Upload and index PDFs, images (PNG, JPG, WebP), and plain text / Markdown files.
-- **OCR Pre-Processing Overlay:** Extracts text, numbers, and layout from images and scans using Tesseract OCR, enabling text-only LLMs to understand visual content.
-- **Page-Aware Chunking:** Uses LangChain's recursive character text splitting (2,000 characters, 400 overlap) while tracking exact page numbers.
-- **Local Vector Search:** Fast cosine similarity search with confidence scoring, persisted locally to disk with zero external database setup.
-- **Strictly Grounded Answers:** Generates answers using a single local model (Qwen 2.5) with low temperature and exact source file & page citations.
-- **Zero Cost & Private:** No API keys, no external cloud dependencies, no credit cards. All data stays on your machine.
+### 🎨 Human-Centric Warm Light UI
+Designed with a calming, tactile aesthetic inspired by modern editorial design. Featuring smooth animations, responsive drag-and-drop ingestion, collapsible conversation history, and zero visual clutter.
+
+### 🧠 Single Model Simplicity (Qwen 2.5)
+Powered entirely by local **Qwen 2.5 (3B)** with a native **32,768 context window** and a **4,096 token generation ceiling**. Delivers deep multi-page synthesis without needing costly multi-model routing or heavy GPU clusters.
+
+### 👁️ Built-in Offline OCR Pipeline
+Understands images, screenshots, scanned receipts, and invoices without requiring heavy multimodal vision model downloads. An integrated Tesseract OCR worker pre-processes visual documents instantly, feeding structured text directly into the retrieval engine.
+
+### ⚡ Real-Time Performance & Token HUD
+Always know what your hardware is doing. A non-intrusive live status HUD tracks:
+- **`In:`** Exact prompt and injected document context tokens.
+- **`Out:`** Tokens generated live at 60 FPS.
+- **`tok/s:`** Live generation velocity.
+- **`Duration:`** Response latency down to the tenth of a second.
+
+### 🎯 Interactive Page Citations
+Every fact and synthesis is backed by verified sources. Clickable citation pills (`[Report.pdf, Page 3]`) open a side preview drawer instantly revealing the exact grounded passage from your knowledge store.
+
+### 📎 Flexible Ingestion: Chat Attachments or Global Knowledge Base
+- **Chat Attachments:** Drag and drop files directly into an active conversation for ad-hoc, focused analysis.
+- **Global Knowledge Base:** Manage persistent documents accessible across every conversation with one-click indexing and removal.
 
 ---
 
-## 🏛️ System Architecture
+## 🏛️ How It Works
 
-```text
-[ Document / Image / PDF ]
-          │
-          ▼
-[ Pre-Processing Overlay (PDF-Parse + Tesseract OCR) ]
-          │
-          ▼
-[ LangChain Recursive Text Splitter (2000 chars / 400 overlap) ]
-          │
-          ▼
-[ Local Vector Store (Embeddings + Cosine Similarity Index) ]
-          │
-          ▼
-[ Context Retrieval (Top-5 Chunks with Confidence Scores) ]
-          │
-          ▼
-[ Ollama: Qwen 2.5 3B (Grounded Answer with Page Citations) ]
+```
+ ┌────────────────────────────────────────────────────────┐
+ │  📄 Input Documents: PDF, DOCX, Images (PNG/JPG), TXT  │
+ └──────────────────────────┬─────────────────────────────┘
+                            │
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │  🔍 Document Pre-Processor                             │
+ │  • Digital PDFs: pdf-parse page extraction             │
+ │  • Images/Scans: Offline Tesseract OCR Worker          │
+ │  • Word Docs: python-docx text & table parser          │
+ └──────────────────────────┬─────────────────────────────┘
+                            │
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │  ✂️ Page-Aware Semantic Chunking                       │
+ │  • Recursive character splitting (2,000 chars / 400 ov)│
+ │  • Preserves exact source filename & page numbers      │
+ └──────────────────────────┬─────────────────────────────┘
+                            │
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │  ⚡ Local Vector Store & Retrieval                     │
+ │  • Embedding model: snowflake-arctic-embed / nomic     │
+ │  • Top-K Cosine similarity with confidence scoring     │
+ └──────────────────────────┬─────────────────────────────┘
+                            │
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │  💬 Local Synthesis (Ollama: Qwen 2.5 3B)              │
+ │  • Max native context window: 32,768                   │
+ │  • Grounded answer generation with page citations      │
+ └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Getting Started
+## 📋 Supported File Formats
+
+| Format | File Extensions | Processing Method |
+| :--- | :--- | :--- |
+| **PDF Documents** | `.pdf` | Direct page-by-page text parsing with fallback OCR |
+| **Word Documents** | `.docx` | Paragraph and structured table text extraction |
+| **Images & Screenshots** | `.png`, `.jpg`, `.jpeg`, `.webp` | High-speed offline Tesseract OCR worker |
+| **Plain Text & Markdown** | `.txt`, `.md` | Direct UTF-8 ingestion and semantic chunking |
+
+---
+
+## 🚀 Quick Start (Under 2 Minutes)
 
 ### 1. Prerequisites
-- **Node.js**: v18.18+ or v20+
-- **Ollama**: Installed from [ollama.com](https://ollama.com)
-- **Computer**: Mac (Apple Silicon recommended) or Linux/Windows with 8 GB+ RAM
+- **Node.js** v18.18+ or v20+
+- **Ollama** installed from [ollama.com](https://ollama.com)
+- 8 GB+ RAM (Runs seamlessly on Apple Silicon Mac M1/M2/M3/M4)
 
-### 2. Pull the Local Model
-Run in your terminal:
+### 2. Pull Local Models
+Ensure Ollama is running, then pull the language and embedding models:
 ```bash
 ollama pull qwen2.5:3b
-```
-
-*(Optional) If you want to use a local embedding model:*
-```bash
 ollama pull snowflake-arctic-embed
 ```
 
-### 3. Installation
+### 3. Install Dependencies
 ```bash
-# Clone the repository
 git clone https://github.com/Udhayakumar-Velou/local-rag.git
 cd local-rag
-
-# Install dependencies
 npm install
 ```
 
-### 4. Environment Configuration
-Copy the sample environment file:
+### 4. Configure Environment
 ```bash
 cp .env.example .env.local
 ```
 
-Default settings:
+Default configuration in `.env.local`:
 ```env
 OLLAMA_HOST=http://127.0.0.1:11434
 CHAT_MODEL=qwen2.5:3b
 EMBEDDING_MODEL=snowflake-arctic-embed
 ```
 
-### 5. Run the Application
+### 5. Launch the Studio
 ```bash
 npm run dev
 ```
-Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+Open **[http://localhost:3000](http://localhost:3000)** in your browser and start asking questions!
 
 ---
 
-## 📂 Project Structure
+## 🛡️ Privacy & Security Guarantee
 
-```text
-├── app/
-│   ├── api/
-│   │   ├── chat/route.ts       # Chat endpoint with context retrieval & streaming
-│   │   └── pdf/route.ts        # Upload, OCR, chunking & vector indexing route
-│   ├── globals.css             # Tailwind CSS styling
-│   ├── layout.tsx              # Root application layout
-│   └── page.tsx                # Chat UI with Knowledge Base manager
-├── data/
-│   ├── documents/              # Storage directory for uploaded documents
-│   └── vector-store.json       # Persisted vector chunks and metadata
-├── lib/
-│   └── rag/
-│       ├── document-preprocessor.ts  # OCR and document parser overlay
-│       ├── text-splitter.ts          # Recursive character text chunker
-│       ├── embeddings.ts             # Embeddings generator and cosine similarity
-│       └── vector-store.ts           # Local vector store with confidence scoring
-├── .env.example                # Example environment variables
-├── .gitignore                  # Git ignore rules
-└── package.json                # Project dependencies
-```
+- **Zero Cloud Leakage:** All computation, embedding generation, OCR parsing, and LLM inference happen strictly on `localhost`.
+- **Safe by Default:** Uploaded documents (`data/documents/*`) and vector indexes (`data/vector-store.json`) are automatically ignored by `.gitignore`.
+- **No Telemetry:** No user analytics or tracking scripts are embedded.
 
 ---
 
-## 📖 How It Works
+## 🛠️ Tech Stack
 
-1. **Upload Documents:** Click **+ Upload** or the document icon to upload PDFs, images, or notes.
-2. **Pre-Processing:** Digital PDFs are parsed page-by-page; images and scans pass through Tesseract OCR to extract readable text.
-3. **Chunking & Indexing:** Text is broken into coherent chunks with overlap and indexed into the local vector store.
-4. **Search & Ask:** When you submit a question, the vector store retrieves the most relevant chunks, injects them into the prompt, and Qwen 2.5 streams a response with source citations.
+- **Framework:** Next.js 16 (App Router, Turbopack)
+- **AI Streaming:** Vercel AI SDK (`@ai-sdk/react`, `streamText`)
+- **Local Engine:** Ollama API (`qwen2.5:3b`)
+- **OCR Engine:** Tesseract.js (Offline language packs)
+- **Styling:** Tailwind CSS with custom editorial color palette
+- **Markdown & Code:** ReactMarkdown, remark-gfm
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for details.

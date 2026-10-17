@@ -4,12 +4,14 @@
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'snowflake-arctic-embed';
+const CHAT_MODEL = process.env.CHAT_MODEL || 'qwen2.5:3b';
 
 export async function generateEmbedding(
   text: string,
   model = EMBEDDING_MODEL,
 ): Promise<number[]> {
+  // 1. Try primary embedding model (e.g. snowflake-arctic-embed)
   try {
     const res = await fetch(`${OLLAMA_HOST}/api/embeddings`, {
       method: 'POST',
@@ -27,9 +29,33 @@ export async function generateEmbedding(
       }
     }
   } catch {
-    // If Ollama is unreachable or model not pulled, use deterministic lightweight feature hashing
+    // Continue to fallback
   }
 
+  // 2. Try using the loaded chat model (qwen2.5:3b) in Ollama for embeddings
+  if (model !== CHAT_MODEL) {
+    try {
+      const resFallback = await fetch(`${OLLAMA_HOST}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: CHAT_MODEL,
+          prompt: text,
+        }),
+      });
+
+      if (resFallback.ok) {
+        const dataFallback = await resFallback.json();
+        if (Array.isArray(dataFallback.embedding)) {
+          return dataFallback.embedding;
+        }
+      }
+    } catch {
+      // Continue to deterministic hash fallback
+    }
+  }
+
+  // 3. Offline deterministic feature hashing
   return fallbackHashEmbedding(text);
 }
 

@@ -39,3 +39,5 @@ next-env.d.ts
 /data/documents/*
 !/data/documents/.gitkeep
 /data/vector-store.json
+/data/tessdata/*.gz
+

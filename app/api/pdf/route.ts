@@ -9,10 +9,32 @@ export const maxDuration = 60;
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
 const DOCUMENTS_DIR = path.join(process.cwd(), 'data', 'documents');
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const docs = LocalVectorStore.listDocuments();
-    const stats = LocalVectorStore.getStats();
+    const { searchParams } = new URL(request.url);
+    const fileName = searchParams.get('fileName');
+    const conversationId = searchParams.get('conversationId') || undefined;
+
+    if (fileName) {
+      if (searchParams.get('raw') === 'true') {
+        const filePath = path.join(DOCUMENTS_DIR, fileName);
+        if (fs.existsSync(filePath)) {
+          const buffer = fs.readFileSync(filePath);
+          const mime = DocumentPreprocessor.inferMimeType(fileName);
+          return new Response(buffer, {
+            headers: {
+              'Content-Type': mime,
+              'Content-Disposition': `inline; filename="${encodeURIComponent(fileName)}"`,
+            },
+          });
+        }
+      }
+      const chunks = LocalVectorStore.getChunksByFile(fileName);
+      return Response.json({ fileName, chunks });
+    }
+
+    const docs = LocalVectorStore.listDocuments(conversationId);
+    const stats = LocalVectorStore.getStats(conversationId);
     return Response.json({ documents: docs, stats });
   } catch (error) {
     return Response.json(
@@ -22,10 +44,34 @@ export async function GET() {
   }
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id') || searchParams.get('fileName');
+
+    if (!id) {
+      return Response.json(
+        { error: 'Document id or fileName is required.' },
+        { status: 400 },
+      );
+    }
+
+    LocalVectorStore.deleteDocument(id);
+    return Response.json({ success: true, deleted: id });
+  } catch (error) {
+    return Response.json(
+      { error: 'Failed to delete document.' },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get('file');
+    const scope = (formData.get('scope') as 'global' | 'chat') || 'global';
+    const conversationId = (formData.get('conversationId') as string) || undefined;
 
     // Validate the uploaded file
     if (!(file instanceof File)) {
@@ -75,14 +121,13 @@ export async function POST(request: Request) {
     }
 
     // Step 3: Chunk text using RecursiveCharacterTextSplitter (chunkSize: 2000, overlap: 400)
-    // Mirrors the exact enterprise logic from doc_text_chunk.py
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 2000,
       chunkOverlap: 400,
     });
     const chunks = splitter.splitPages(processedDoc.pages);
 
-    // Step 4: Index into LocalVectorStore (Snowflake Cortex Search equivalent)
+    // Step 4: Index into LocalVectorStore with dual-tier scope
     const docId = `doc-${Date.now()}`;
     await LocalVectorStore.addDocument(
       {
@@ -93,6 +138,8 @@ export async function POST(request: Request) {
         uploadedAt: new Date().toISOString(),
       },
       chunks,
+      scope,
+      conversationId,
     );
 
     return Response.json({
@@ -102,6 +149,8 @@ export async function POST(request: Request) {
       pages: processedDoc.pages.length,
       chunksCount: chunks.length,
       characters: processedDoc.totalCharacters,
+      scope,
+      conversationId,
     });
   } catch (error) {
     console.error('Document pre-processing & indexing error:', error);
