@@ -11,6 +11,8 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.81",
     "@ai-sdk/react": "^3.0.307",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "ai": "^6.0.304",
     "next": "16.4.0",
     "pdf-parse": "^2.2.2",

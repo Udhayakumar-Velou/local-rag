@@ -31,7 +31,7 @@ Document Grounding & Knowledge Integration:
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, conversationId } = body;
+    const { messages, conversationId, customPrompt } = body;
 
     if (!Array.isArray(messages)) {
       return Response.json(
@@ -137,7 +137,11 @@ export async function POST(req: Request) {
       console.error('Vector store search error:', searchErr);
     }
 
-    const effectiveSystemPrompt = `${BASE_SYSTEM_PROMPT}${contextBlock}`;
+    let effectiveSystemPrompt = BASE_SYSTEM_PROMPT;
+    if (customPrompt && typeof customPrompt === 'string' && customPrompt.trim()) {
+      effectiveSystemPrompt = `PROJECT SPECIFIC INSTRUCTIONS:\n${customPrompt.trim()}\n\n---\n\n${BASE_SYSTEM_PROMPT}`;
+    }
+    effectiveSystemPrompt = `${effectiveSystemPrompt}${contextBlock}`;
 
     console.log('[Local AI] Selected model:', TEXT_MODEL);
     console.log('[Local AI] Injected context length:', contextBlock.length);

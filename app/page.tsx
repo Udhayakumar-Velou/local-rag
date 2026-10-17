@@ -11,12 +11,25 @@ import { useChat } from '@ai-sdk/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { UIMessage } from 'ai';
+import type { User } from '@supabase/supabase-js';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import type { Project } from '@/lib/supabase/types';
+import {
+  fetchProjects,
+  createProject,
+  updateProject,
+  deleteProject,
+  fetchCloudConversations,
+  saveCloudConversation,
+  deleteCloudConversation,
+} from '@/lib/supabase/sync';
 
 interface Conversation {
   id: string;
   title: string;
   messages: UIMessage[];
   updatedAt: number;
+  projectId?: string | null;
 }
 
 interface StoredDocItem {
@@ -57,6 +70,45 @@ function IconPaperclip({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="1.8">
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconGoogle({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className}>
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+      />
+    </svg>
+  );
+}
+
+function IconApple({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.65 1.35-.58.66-1.08 1.73-.95 2.76.99.08 2.04-.51 2.68-1.26z" />
+    </svg>
+  );
+}
+
+function IconFolder({ className = "h-4 w-4", style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} style={style} stroke="currentColor" strokeWidth="1.8">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -124,12 +176,13 @@ function formatNumber(value?: number): string {
   return value == null ? '0' : value.toLocaleString();
 }
 
-function createConversation(): Conversation {
+function createConversation(projectId?: string | null): Conversation {
   return {
     id: crypto.randomUUID(),
     title: 'New conversation',
     messages: [],
     updatedAt: Date.now(),
+    projectId: projectId || null,
   };
 }
 
@@ -235,6 +288,27 @@ function ChatApp() {
   const docInputRef = useRef<HTMLInputElement>(null);
   const chatDocInputRef = useRef<HTMLInputElement>(null);
 
+  // Supabase Client & Auth State
+  const supabase = useRef(createClient()).current;
+  const isCloudConfigured = isSupabaseConfigured();
+  const [user, setUser] = useState<User | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // Projects State
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectColor, setNewProjectColor] = useState('#6366f1');
+  const [newProjectDesc, setNewProjectDesc] = useState('');
+  const [newProjectPrompt, setNewProjectPrompt] = useState('');
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
+
   const {
     messages,
     sendMessage,
@@ -320,6 +394,46 @@ function ChatApp() {
     setReady(true);
   }, [setMessages]);
 
+  // Initialize Supabase auth state & listener
+  useEffect(() => {
+    if (!supabase) return;
+
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  // Sync projects and cloud conversations when user logs in
+  useEffect(() => {
+    if (!supabase || !user) return;
+
+    fetchProjects(supabase).then((projs) => {
+      setProjects(projs);
+    });
+
+    fetchCloudConversations(supabase).then((cloudConvs) => {
+      if (cloudConvs.length > 0) {
+        const mapped: Conversation[] = cloudConvs.map((c) => ({
+          id: c.id,
+          title: c.title,
+          messages: c.messages,
+          updatedAt: c.updated_at,
+          projectId: c.project_id,
+        }));
+        setConversations(mapped);
+        safeSaveConversations(mapped);
+      }
+    });
+  }, [supabase, user]);
+
   // Keep conversations updated and safely persisted when not streaming
   useEffect(() => {
     if (!ready || !activeId) return;
@@ -338,6 +452,7 @@ function ChatApp() {
         title: getTitle(messages),
         messages,
         updatedAt: Date.now(),
+        projectId: existing?.projectId ?? activeProjectId,
       };
 
       const updated = existing
@@ -346,9 +461,14 @@ function ChatApp() {
 
       const sorted = updated.sort((a, b) => b.updatedAt - a.updatedAt);
       safeSaveConversations(sorted);
+
+      if (supabase && user) {
+        saveCloudConversation(supabase, current, current.projectId);
+      }
+
       return sorted;
     });
-  }, [messages, activeId, ready, isLoading]);
+  }, [messages, activeId, ready, isLoading, supabase, user, activeProjectId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -357,11 +477,39 @@ function ChatApp() {
     });
   }, [messages, isLoading]);
 
-  const startNewChat = useCallback(() => {
+  useEffect(() => {
+    function handleClickOutside() {
+      setOpenProjectMenuId(null);
+    }
+    if (openProjectMenuId) {
+      window.addEventListener('click', handleClickOutside);
+      return () => window.removeEventListener('click', handleClickOutside);
+    }
+  }, [openProjectMenuId]);
+
+  const toggleProjectExpand = useCallback((projectId: string) => {
+    setExpandedProjectIds((prev) =>
+      prev.includes(projectId) ? prev.filter((id) => id !== projectId) : [...prev, projectId],
+    );
+  }, []);
+
+  const openEditProject = useCallback((proj: Project, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingProject(proj);
+    setNewProjectName(proj.name);
+    setNewProjectDesc(proj.description || '');
+    setNewProjectColor(proj.color || '#6366f1');
+    setNewProjectPrompt(proj.custom_prompt || '');
+    setProjectModalOpen(true);
+  }, []);
+
+  const startNewChat = useCallback((forProjectId?: string | null) => {
     if (isLoading) return;
-    const conversation = createConversation();
+    const targetProjId = forProjectId !== undefined ? forProjectId : null;
+    const conversation = createConversation(targetProjId);
     activeIdRef.current = conversation.id;
     setActiveId(conversation.id);
+    setActiveProjectId(targetProjId);
     setMessages([]);
     setInput('');
     setSelectedImages([]);
@@ -374,6 +522,12 @@ function ChatApp() {
       startTime: 0,
       durationMs: 0,
     });
+
+    if (targetProjId) {
+      setExpandedProjectIds((prev) =>
+        prev.includes(targetProjId) ? prev : [...prev, targetProjId],
+      );
+    }
 
     setConversations((prev) => {
       const updated = [conversation, ...prev];
@@ -400,6 +554,15 @@ function ChatApp() {
         startTime: 0,
         durationMs: 0,
       });
+
+      if (conversation.projectId) {
+        setActiveProjectId(conversation.projectId);
+        setExpandedProjectIds((prev) =>
+          prev.includes(conversation.projectId!) ? prev : [...prev, conversation.projectId!],
+        );
+      } else {
+        setActiveProjectId(null);
+      }
     },
     [isLoading, setMessages],
   );
@@ -407,9 +570,12 @@ function ChatApp() {
   const deleteConversation = useCallback(
     (id: string) => {
       if (isLoading) return;
+      if (supabase && user) {
+        deleteCloudConversation(supabase, id);
+      }
       const remaining = conversations.filter((c) => c.id !== id);
       if (id === activeId) {
-        const next = remaining[0] ?? createConversation();
+        const next = remaining[0] ?? createConversation(activeProjectId);
         activeIdRef.current = next.id;
         setActiveId(next.id);
         setMessages(next.messages ?? []);
@@ -421,8 +587,130 @@ function ChatApp() {
         safeSaveConversations(remaining);
       }
     },
-    [activeId, conversations, isLoading, setMessages],
+    [activeId, conversations, isLoading, setMessages, supabase, user, activeProjectId],
   );
+
+  async function signInWithGoogle() {
+    if (!supabase) {
+      setAuthError('Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      setAuthError(error.message);
+      setAuthLoading(false);
+    }
+  }
+
+  async function signInWithApple() {
+    if (!supabase) {
+      setAuthError('Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      setAuthError(error.message);
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setUser(null);
+  }
+
+  async function handleCreateProjectSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newProjectName.trim()) return;
+
+    setCreatingProject(true);
+    if (editingProject) {
+      if (supabase && user) {
+        await updateProject(supabase, editingProject.id, {
+          name: newProjectName.trim(),
+          description: newProjectDesc.trim(),
+          color: newProjectColor,
+          custom_prompt: newProjectPrompt.trim(),
+        });
+      }
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === editingProject.id
+            ? {
+                ...p,
+                name: newProjectName.trim(),
+                description: newProjectDesc.trim(),
+                color: newProjectColor,
+                custom_prompt: newProjectPrompt.trim(),
+                updated_at: new Date().toISOString(),
+              }
+            : p,
+        ),
+      );
+      setEditingProject(null);
+    } else {
+      let created: Project | null = null;
+      if (supabase && user) {
+        created = await createProject(
+          supabase,
+          newProjectName,
+          newProjectDesc,
+          newProjectColor,
+          newProjectPrompt,
+        );
+      }
+      
+      if (!created) {
+        created = {
+          id: crypto.randomUUID(),
+          user_id: user?.id || 'local',
+          name: newProjectName.trim(),
+          description: newProjectDesc.trim(),
+          color: newProjectColor,
+          custom_prompt: newProjectPrompt.trim(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      }
+
+      setProjects((prev) => [created!, ...prev]);
+      setActiveProjectId(created.id);
+      setExpandedProjectIds((prev) => [...prev, created!.id]);
+    }
+
+    setNewProjectName('');
+    setNewProjectDesc('');
+    setNewProjectPrompt('');
+    setCreatingProject(false);
+    setProjectModalOpen(false);
+  }
+
+  async function handleDeleteProjectSubmit(projectId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this project?')) return;
+    if (supabase && user) {
+      await deleteProject(supabase, projectId);
+    }
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    if (activeProjectId === projectId) {
+      setActiveProjectId(null);
+    }
+  }
 
   async function processFileUpload(file: File, scope: 'global' | 'chat' = 'chat') {
     setUploadingDoc(true);
@@ -635,6 +923,9 @@ function ChatApp() {
       const fileList = new DataTransfer();
       filesToSend.forEach((file) => fileList.items.add(file));
 
+      const currentConv = conversations.find((c) => c.id === activeId);
+      const currentProj = projects.find((p) => p.id === currentConv?.projectId);
+
       await sendMessage(
         {
           text: text || (filesToSend.length > 0 ? `Please analyze and summarize the attached document (${filesToSend.map((f) => f.name).join(', ')}).` : ''),
@@ -643,6 +934,7 @@ function ChatApp() {
         {
           body: {
             conversationId: activeId,
+            customPrompt: currentProj?.custom_prompt,
           },
         },
       );
@@ -716,12 +1008,27 @@ function ChatApp() {
       >
         <div className="flex h-16 items-center justify-between border-b border-[#e2dfd7] px-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-stone-900 text-xs font-semibold text-white">
-              RAG
+            <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-stone-900 text-white shadow-2xs">
+              <svg viewBox="0 0 32 32" className="h-4 w-4" fill="none">
+                <line x1="11" y1="6" x2="11" y2="26" stroke="#fdfcf9" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M11 6.5L19 11.5L11 16.5" fill="none" stroke="#fdfcf9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="11.5" y1="16.5" x2="20" y2="25.5" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" />
+                <circle cx="22" cy="7" r="1.5" fill="#f59e0b" />
+              </svg>
             </div>
-            <span className="text-sm font-semibold tracking-tight text-stone-900">
-              Local Document AI
-            </span>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[15px] font-semibold tracking-tight text-stone-900 leading-tight lowercase">
+                  rune
+                </span>
+                <span className="rounded bg-amber-100/70 px-1 py-0.2 text-[9px] font-medium text-amber-800">
+                  ai
+                </span>
+              </div>
+              <span className="text-[10px] text-stone-500 font-medium leading-none">
+                document intelligence
+              </span>
+            </div>
           </div>
 
           <button
@@ -737,7 +1044,7 @@ function ChatApp() {
         <div className="p-3">
           <button
             type="button"
-            onClick={startNewChat}
+            onClick={() => startNewChat()}
             disabled={isLoading || !ready}
             className="flex w-full items-center justify-between rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-3.5 py-2.5 text-sm text-stone-800 shadow-2xs transition hover:border-[#cfc9be] hover:bg-white disabled:opacity-40"
           >
@@ -746,55 +1053,397 @@ function ChatApp() {
           </button>
         </div>
 
-        {/* Conversations History */}
-        <div className="border-t border-[#e2dfd7] px-4 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
-          Recent Conversations
-        </div>
+        {/* Unified Scrollable Sidebar: Projects with Nested Chats + Conversations */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-2 space-y-4">
+          {/* PROJECTS SECTION */}
+          <div>
+            <div className="flex items-center justify-between px-1 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                Projects
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProject(null);
+                  setNewProjectName('');
+                  setNewProjectDesc('');
+                  setNewProjectPrompt('');
+                  setNewProjectColor('#6366f1');
+                  setProjectModalOpen(true);
+                }}
+                className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#ded9cf]/60 text-stone-500 hover:text-stone-800 transition"
+                title="Create new project"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {conversations.length === 0 ? (
-            <p className="px-3 py-4 text-xs text-stone-400">
-              Your conversations will appear here.
-            </p>
-          ) : (
-            conversations.map((conversation) => {
-              const active = conversation.id === activeId;
-              return (
-                <div
-                  key={conversation.id}
-                  className={`group mb-1 flex items-center gap-1 rounded-xl transition ${
-                    active ? 'bg-[#ded9cf]/80 text-stone-900 font-medium shadow-2xs' : 'text-stone-600 hover:bg-[#ded9cf]/40 hover:text-stone-900'
-                  }`}
+            {projects.length === 0 ? (
+              <div className="px-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingProject(null);
+                    setNewProjectName('');
+                    setNewProjectDesc('');
+                    setNewProjectPrompt('');
+                    setNewProjectColor('#6366f1');
+                    setProjectModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-700 transition text-left"
                 >
-                  <button
-                    type="button"
-                    onClick={() => switchConversation(conversation)}
-                    disabled={isLoading}
-                    title={conversation.title}
-                    className="min-w-0 flex-1 truncate px-3 py-2 text-left text-[13px] disabled:cursor-not-allowed"
-                  >
-                    <span className="block truncate">{conversation.title}</span>
-                  </button>
+                  <span className="text-sm">+</span>
+                  <span>Create your first project</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {projects.map((proj) => {
+                  const isExpanded = expandedProjectIds.includes(proj.id);
+                  const projectConvs = conversations.filter((c) => c.projectId === proj.id);
+                  const hasActiveChat = projectConvs.some((c) => c.id === activeId);
+                  const isMenuOpen = openProjectMenuId === proj.id;
 
-                  <button
-                    type="button"
-                    aria-label={`Delete ${conversation.title}`}
-                    onClick={() => deleteConversation(conversation.id)}
-                    disabled={isLoading}
-                    className="mr-1 rounded p-1 text-stone-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="1.6">
-                      <path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
-                </div>
-              );
-            })
-          )}
+                  return (
+                    <div key={proj.id} className="relative space-y-0.5">
+                      {/* Project Folder Row */}
+                      <div
+                        className={`group flex items-center justify-between rounded-xl px-2 py-1.5 text-xs transition cursor-pointer select-none ${
+                          hasActiveChat || activeProjectId === proj.id
+                            ? 'bg-[#ded9cf]/70 text-stone-900 font-medium'
+                            : 'text-stone-700 hover:bg-[#ded9cf]/40 hover:text-stone-900'
+                        }`}
+                        onClick={() => toggleProjectExpand(proj.id)}
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleProjectExpand(proj.id);
+                            }}
+                            className="p-0.5 text-stone-400 hover:text-stone-700 transition"
+                            title={isExpanded ? 'Collapse project' : 'Expand project'}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              className={`h-3 w-3 transition-transform duration-150 ${
+                                isExpanded ? 'rotate-90 text-stone-700' : 'text-stone-400'
+                              }`}
+                              stroke="currentColor"
+                              strokeWidth="2.2"
+                            >
+                              <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+
+                          <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                            <IconFolder
+                              className="h-4 w-4 shrink-0"
+                              style={{ color: proj.color || '#6366f1' }}
+                            />
+                            <span className="truncate">{proj.name}</span>
+                          </div>
+                        </div>
+
+                        {/* Project Actions on Hover */}
+                        <div className="flex items-center gap-0.5">
+                          {/* New chat in this project button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startNewChat(proj.id);
+                            }}
+                            title={`New chat in ${proj.name}`}
+                            className="hidden h-5 w-5 items-center justify-center rounded text-stone-400 hover:bg-[#ded9cf] hover:text-stone-800 transition group-hover:flex"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="2.2">
+                              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                            </svg>
+                          </button>
+
+                          {/* More Options / Popover Menu button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenProjectMenuId(isMenuOpen ? null : proj.id);
+                            }}
+                            title="Project options"
+                            className={`h-5 w-5 items-center justify-center rounded transition ${
+                              isMenuOpen
+                                ? 'flex bg-[#ded9cf] text-stone-800'
+                                : 'hidden text-stone-400 hover:bg-[#ded9cf] hover:text-stone-800 group-hover:flex'
+                            }`}
+                          >
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                              <circle cx="12" cy="12" r="1.5" />
+                              <circle cx="6" cy="12" r="1.5" />
+                              <circle cx="18" cy="12" r="1.5" />
+                            </svg>
+                          </button>
+
+                          {/* Chat count badge (shown when not hovering and menu not open) */}
+                          {!isMenuOpen && (
+                            <span className="text-[10px] text-stone-400 px-1 group-hover:hidden">
+                              {projectConvs.length}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Dropdown Popover Menu (matching ChatGPT project menu) */}
+                      {isMenuOpen && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute right-2 top-8 z-50 w-44 rounded-2xl border border-[#ded9cf] bg-[#fdfcf9] p-1.5 shadow-xl text-xs space-y-0.5 animate-in fade-in zoom-in-95 duration-100"
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setOpenProjectMenuId(null);
+                              openEditProject(proj, e);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-stone-700 hover:bg-[#ded9cf]/50 transition text-left"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-stone-500" stroke="currentColor" strokeWidth="1.8">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            <span>Project settings</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenProjectMenuId(null);
+                              startNewChat(proj.id);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-stone-700 hover:bg-[#ded9cf]/50 transition text-left"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-stone-500" stroke="currentColor" strokeWidth="2">
+                              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                            </svg>
+                            <span>New chat</span>
+                          </button>
+
+                          <div className="border-t border-[#eeece5] my-1" />
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setOpenProjectMenuId(null);
+                              handleDeleteProjectSubmit(proj.id, e);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-red-600 hover:bg-red-50 transition text-left"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-red-500" stroke="currentColor" strokeWidth="1.8">
+                              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            <span>Delete project</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Nested Project Chats (clean indentation like ChatGPT) */}
+                      {isExpanded && (
+                        <div className="pl-6 pr-1 space-y-0.5 mt-0.5 mb-1.5">
+                          {projectConvs.length === 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => startNewChat(proj.id)}
+                              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-stone-400 hover:bg-[#ded9cf]/40 hover:text-stone-700 transition"
+                            >
+                              <span className="text-xs">+</span>
+                              <span>New chat in {proj.name}</span>
+                            </button>
+                          ) : (
+                            <>
+                              {projectConvs.map((conversation) => {
+                                const active = conversation.id === activeId;
+                                return (
+                                  <div
+                                    key={conversation.id}
+                                    className={`group flex items-center justify-between rounded-xl transition ${
+                                      active
+                                        ? 'bg-[#ded9cf]/80 text-stone-900 font-medium shadow-2xs'
+                                        : 'text-stone-600 hover:bg-[#ded9cf]/40 hover:text-stone-900'
+                                    }`}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => switchConversation(conversation)}
+                                      disabled={isLoading}
+                                      title={conversation.title}
+                                      className="min-w-0 flex-1 truncate px-2.5 py-1.5 text-left text-[12.5px] disabled:cursor-not-allowed"
+                                    >
+                                      <span className="block truncate">{conversation.title}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      aria-label={`Delete ${conversation.title}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteConversation(conversation.id);
+                                      }}
+                                      disabled={isLoading}
+                                      className="mr-1 rounded p-1 text-stone-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                                    >
+                                      <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="1.8">
+                                        <path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+
+                              {/* Button to quickly add another chat to this project */}
+                              <button
+                                type="button"
+                                onClick={() => startNewChat(proj.id)}
+                                className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] text-stone-400 hover:bg-[#ded9cf]/40 hover:text-stone-700 transition"
+                              >
+                                <span className="text-xs">+</span>
+                                <span>New chat</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* CONVERSATIONS SECTION (Standalone chats not assigned to a project) */}
+          <div className="border-t border-[#e2dfd7] pt-3">
+            <div className="flex items-center justify-between px-1 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                Conversations
+              </span>
+              <button
+                type="button"
+                onClick={() => startNewChat()}
+                className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#ded9cf]/60 text-stone-500 hover:text-stone-800 transition"
+                title="New conversation"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+
+            {conversations.filter((c) => !c.projectId).length === 0 ? (
+              <p className="px-2 py-2 text-xs text-stone-400">
+                Your standalone conversations will appear here.
+              </p>
+            ) : (
+              <div className="space-y-0.5">
+                {conversations
+                  .filter((c) => !c.projectId)
+                  .map((conversation) => {
+                    const active = conversation.id === activeId;
+                    return (
+                      <div
+                        key={conversation.id}
+                        className={`group flex items-center justify-between rounded-xl transition ${
+                          active
+                            ? 'bg-[#ded9cf]/90 text-stone-900 font-medium shadow-2xs'
+                            : 'text-stone-600 hover:bg-[#ded9cf]/40 hover:text-stone-900'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => switchConversation(conversation)}
+                          disabled={isLoading}
+                          title={conversation.title}
+                          className="min-w-0 flex-1 truncate px-2.5 py-1.5 text-left text-[13px] disabled:cursor-not-allowed"
+                        >
+                          <span className="block truncate">{conversation.title}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-label={`Delete ${conversation.title}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conversation.id);
+                          }}
+                          disabled={isLoading}
+                          className="mr-1.5 rounded p-1 text-stone-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="1.6">
+                            <path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Sidebar Footer with Knowledge Base & Status */}
-        <div className="border-t border-[#e2dfd7] p-3">
+        {/* Sidebar Footer with User Profile / Login & Knowledge Base */}
+        <div className="border-t border-[#e2dfd7] p-3 space-y-2">
+          {/* User Profile / Auth State */}
+          {user ? (
+            <div className="flex items-center justify-between rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-2.5 py-1.5 text-xs shadow-2xs">
+              <div className="flex items-center gap-2 min-w-0">
+                {user.user_metadata?.avatar_url ? (
+                  <img
+                    src={user.user_metadata.avatar_url}
+                    alt="User"
+                    className="h-6 w-6 rounded-full object-cover border border-[#ded9cf]"
+                  />
+                ) : (
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-800 text-[10px] font-semibold text-white">
+                    {user.email?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-stone-800 text-[11px]">
+                    {user.user_metadata?.full_name || user.email?.split('@')[0]}
+                  </p>
+                  <p className="truncate text-[9px] text-stone-400">
+                    Synced with Cloud
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="rounded px-1.5 py-0.5 text-[10px] font-medium text-stone-400 hover:text-stone-700 hover:bg-[#eeece5] transition shrink-0"
+                title="Sign out"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAuthModalOpen(true)}
+              className="flex w-full items-center justify-between rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-3 py-2 text-xs text-stone-700 shadow-2xs transition hover:border-[#cfc9be] hover:bg-white hover:text-stone-900"
+            >
+              <div className="flex items-center gap-2">
+                <IconGoogle className="h-4 w-4" />
+                <span className="font-medium">Sign in to Sync</span>
+              </div>
+              <span className="rounded bg-indigo-50 text-indigo-700 px-1.5 py-0.5 text-[10px] font-medium">
+                Cloud
+              </span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setDocModalOpen(true)}
@@ -809,11 +1458,18 @@ function ChatApp() {
             </span>
           </button>
 
-          <div className="mt-2.5 flex items-center gap-2 px-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-medium text-stone-600">
-              Qwen 2.5 (3B) · Ollama
-            </span>
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="text-[11px] font-medium text-stone-600">
+                Qwen 2.5 · Local Ollama
+              </span>
+            </div>
+            {user && (
+              <span className="text-[10px] font-medium text-emerald-600">
+                ☁️ Synced
+              </span>
+            )}
           </div>
         </div>
       </aside>
@@ -834,51 +1490,25 @@ function ChatApp() {
               </svg>
             </button>
 
-            {/* Direct New Chat Button in Top Bar */}
-            <button
-              type="button"
-              onClick={startNewChat}
-              disabled={isLoading || !ready}
-              className="flex items-center gap-1.5 rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-3 py-1.5 text-xs font-medium text-stone-800 shadow-2xs transition hover:border-[#cfc9be] hover:bg-white disabled:opacity-40"
-              title="Start a new conversation"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2.2">
-                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-              </svg>
-              <span>New chat</span>
-            </button>
-
-            {/* Knowledge Base Modal Button */}
-            <button
-              type="button"
-              onClick={() => setDocModalOpen(true)}
-              className="flex items-center gap-2 rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-3 py-1.5 text-xs text-stone-700 shadow-2xs transition hover:border-[#cfc9be] hover:bg-white hover:text-stone-900"
-              title="Open Knowledge Base & Documents modal"
-            >
-              <IconDatabase className="h-3.5 w-3.5 text-stone-600" />
-              <span className="hidden font-medium sm:inline">Knowledge Base</span>
-              <span className="rounded bg-[#eeece5] px-1.5 py-0.5 text-[10px] font-medium text-stone-700">
-                {documents.length}
-              </span>
-            </button>
-
-            {/* Current Chat Document Pill (if any) */}
-            {chatDocs.length > 0 && (
-              <div
-                onClick={() => {
-                  setDocModalTab('chat');
-                  setDocModalOpen(true);
-                }}
-                className="hidden cursor-pointer items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-xs text-indigo-700 shadow-2xs transition hover:bg-indigo-100 md:flex"
-                title="Manage documents attached to this chat"
-              >
-                <IconPaperclip className="h-3.5 w-3.5 text-indigo-600" />
-                <span className="max-w-[140px] truncate">{chatDocs[0].fileName}</span>
-                {chatDocs.length > 1 && (
-                  <span className="text-[10px] text-indigo-500">+{chatDocs.length - 1}</span>
-                )}
-              </div>
-            )}
+            {/* Current Project Pill (if any) */}
+            {(() => {
+              const currentConv = conversations.find((c) => c.id === activeId);
+              const currentProj = projects.find((p) => p.id === currentConv?.projectId);
+              if (!currentProj) return null;
+              return (
+                <div
+                  onClick={(e) => openEditProject(currentProj, e)}
+                  className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-3 py-1.5 text-xs text-stone-800 shadow-2xs hover:border-[#cfc9be] hover:bg-white transition"
+                  title={`Project: ${currentProj.name}${currentProj.custom_prompt ? ' (Custom instructions active)' : ''}. Click to edit settings.`}
+                >
+                  <IconFolder
+                    className="h-4 w-4 shrink-0"
+                    style={{ color: currentProj.color || '#6366f1' }}
+                  />
+                  <span className="max-w-[180px] truncate font-medium">{currentProj.name}</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Live Working Token Metrics Counter */}
@@ -1722,6 +2352,205 @@ function ChatApp() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Auth Modal (Google & Apple Sign In) */}
+      {authModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-3xl border border-[#ded9cf] bg-[#fdfcf9] p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#eeece5]">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-stone-900 text-xs font-semibold text-white">
+                  AI
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-stone-900">Sign in to Local AI</h3>
+                  <p className="text-[11px] text-stone-500">Sync projects & chats across devices</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthModalOpen(false);
+                  setAuthError('');
+                }}
+                className="rounded-lg p-1 text-stone-400 hover:bg-[#eeece5] hover:text-stone-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="pt-5 space-y-3">
+              {!isCloudConfigured && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-900">
+                  <p className="font-semibold mb-1">⚙️ Supabase Setup Required</p>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    Add <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[10px]">NEXT_PUBLIC_SUPABASE_URL</code> and <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[10px]">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to your <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[10px]">.env.local</code> file to enable cloud login.
+                  </p>
+                </div>
+              )}
+
+              {authError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+                  {authError}
+                </div>
+              )}
+
+              <button
+                type="button"
+                disabled={authLoading}
+                onClick={signInWithGoogle}
+                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#ded9cf] bg-white px-4 py-3 text-xs font-medium text-stone-800 shadow-2xs transition hover:bg-stone-50 hover:border-[#cfc9be] disabled:opacity-50"
+              >
+                <IconGoogle className="h-4 w-4" />
+                <span>Continue with Google</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={authLoading}
+                onClick={signInWithApple}
+                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-stone-800 bg-stone-900 px-4 py-3 text-xs font-medium text-white shadow-2xs transition hover:bg-stone-800 disabled:opacity-50"
+              >
+                <IconApple className="h-4 w-4" />
+                <span>Continue with Apple</span>
+              </button>
+
+              <p className="pt-2 text-center text-[10px] text-stone-400 leading-tight">
+                LLM inference runs 100% locally on your machine via Ollama. Only your conversation titles and project structure sync to your private Supabase cloud database.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Creation Modal */}
+      {projectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-3xl border border-[#ded9cf] bg-[#fdfcf9] p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#eeece5]">
+              <div className="flex items-center gap-2">
+                <IconFolder className="h-4 w-4 text-stone-700" />
+                <h3 className="text-sm font-semibold text-stone-900">
+                  {editingProject ? 'Edit Workspace Project' : 'New Workspace Project'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectModalOpen(false);
+                  setEditingProject(null);
+                  setNewProjectName('');
+                  setNewProjectDesc('');
+                  setNewProjectPrompt('');
+                }}
+                className="rounded-lg p-1 text-stone-400 hover:bg-[#eeece5] hover:text-stone-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateProjectSubmit} className="pt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-stone-700 mb-1">
+                  Project Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Linkedin, Dare, Master Thesis"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="w-full rounded-xl border border-[#ded9cf] bg-white px-3 py-2 text-xs text-stone-900 placeholder-stone-400 focus:border-stone-500 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-stone-700 mb-1.5">
+                  Color Tag
+                </label>
+                <div className="flex items-center gap-2">
+                  {[
+                    { color: '#6366f1', label: 'Indigo' },
+                    { color: '#10b981', label: 'Emerald' },
+                    { color: '#f59e0b', label: 'Amber' },
+                    { color: '#ef4444', label: 'Rose' },
+                    { color: '#8b5cf6', label: 'Purple' },
+                    { color: '#06b6d4', label: 'Cyan' },
+                  ].map((c) => (
+                    <button
+                      key={c.color}
+                      type="button"
+                      onClick={() => setNewProjectColor(c.color)}
+                      style={{ backgroundColor: c.color }}
+                      className={`h-6 w-6 rounded-full transition transform ${
+                        newProjectColor === c.color
+                          ? 'ring-2 ring-stone-900 ring-offset-2 scale-110'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-stone-700">
+                    Custom System Prompt / Instructions (Optional)
+                  </label>
+                  <span className="text-[10px] text-stone-400">Injected into Qwen 2.5</span>
+                </div>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Act as a senior technical recruiter reviewing CVs. Focus on action verbs, quantify impact, and keep feedback concise and actionable."
+                  value={newProjectPrompt}
+                  onChange={(e) => setNewProjectPrompt(e.target.value)}
+                  className="w-full rounded-xl border border-[#ded9cf] bg-white px-3 py-2 text-xs text-stone-900 placeholder-stone-400 focus:border-stone-500 focus:outline-none resize-none"
+                />
+                <p className="mt-1 text-[10.5px] text-stone-400 leading-tight">
+                  Custom instructions automatically applied to every chat in this project.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-stone-700 mb-1">
+                  Description (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dedicated docs and chats for innovation"
+                  value={newProjectDesc}
+                  onChange={(e) => setNewProjectDesc(e.target.value)}
+                  className="w-full rounded-xl border border-[#ded9cf] bg-white px-3 py-2 text-xs text-stone-900 placeholder-stone-400 focus:border-stone-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProjectModalOpen(false);
+                    setEditingProject(null);
+                    setNewProjectName('');
+                    setNewProjectDesc('');
+                    setNewProjectPrompt('');
+                  }}
+                  className="rounded-xl px-3 py-2 text-xs font-medium text-stone-600 hover:bg-[#eeece5]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingProject || !newProjectName.trim()}
+                  className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-medium text-white shadow-2xs hover:bg-stone-800 disabled:opacity-40"
+                >
+                  {creatingProject ? 'Saving...' : editingProject ? 'Save Changes' : 'Create Project'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

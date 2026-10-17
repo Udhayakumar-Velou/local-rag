@@ -1,20 +1,21 @@
 <div align="center">
 
-# 🧠 Local Document AI & Search (RAG)
+# ᚱ rune · local ai
 
-### Enterprise-Grade, 100% Private Document Intelligence Running Entirely on Your Local Machine.
+### Enterprise-Grade, 100% Private Document Intelligence & Workspace Running Locally.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.4-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![Ollama](https://img.shields.io/badge/Ollama-Qwen_2.5_(3B)-white?style=for-the-badge&logo=ollama)](https://ollama.com/)
 [![Local Only](https://img.shields.io/badge/Privacy-100%25_Offline-emerald?style=for-the-badge&logo=shield)](https://github.com/)
 [![Apple Silicon](https://img.shields.io/badge/Optimized-Mac_M1%2FM2%2FM3-silver?style=for-the-badge&logo=apple)](https://apple.com/)
+[![Supabase](https://img.shields.io/badge/Sync-Supabase_Cloud-3ecf8e?style=for-the-badge&logo=supabase)](https://supabase.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 <br />
 
 <p align="center">
   <b>Talk to your PDFs, DOCX files, receipts, notes, and screenshots — completely offline.</b><br />
-  No cloud APIs. No recurring subscriptions. No data leaving your laptop.
+  Featuring project-based workspaces, custom system instructions, and optional encrypted cloud sync.
 </p>
 
 </div>
@@ -23,8 +24,19 @@
 
 ## 🌟 Product Highlights
 
-### 🎨 Human-Centric Warm Light UI
-Designed with a calming, tactile aesthetic inspired by modern editorial design. Featuring smooth animations, responsive drag-and-drop ingestion, collapsible conversation history, and zero visual clutter.
+### 📁 Project Workspaces & Hierarchy
+Organize complex research, teams, and documents into dedicated **Projects** (e.g., *Linkedin*, *Automation*, *Dare*, *Master Thesis*).
+- **Expandable Folder Tree:** Projects expand and collapse with clean indented conversation lists.
+- **Hover Quick Actions:** Instantly start a new conversation inside any project (`+`) or open project settings (`⋯`).
+- **Context Awareness:** The top navigation bar displays the active project folder badge.
+
+### 🎯 Custom System Instructions Per Project
+Assign distinct personas, output rules, or domain instructions to individual projects:
+- Custom prompts are automatically injected into the local **Qwen 2.5** system instructions for every chat in that workspace.
+- Tailor feedback style (e.g., *"Act as a senior tech recruiter reviewing CVs"* or *"Provide concise bullet points for executive briefings"*).
+
+### 🎨 Editorial Warm Light UI
+Designed with a calming, tactile aesthetic inspired by modern editorial design. Featuring smooth animations, responsive drag-and-drop ingestion, clean distraction-free navigation, and zero visual clutter.
 
 ### 🧠 Single Model Simplicity (Qwen 2.5)
 Powered entirely by local **Qwen 2.5 (3B)** with a native **32,768 context window** and a **4,096 token generation ceiling**. Delivers deep multi-page synthesis without needing costly multi-model routing or heavy GPU clusters.
@@ -42,9 +54,9 @@ Always know what your hardware is doing. A non-intrusive live status HUD tracks:
 ### 🎯 Interactive Page Citations
 Every fact and synthesis is backed by verified sources. Clickable citation pills (`[Report.pdf, Page 3]`) open a side preview drawer instantly revealing the exact grounded passage from your knowledge store.
 
-### 📎 Flexible Ingestion: Chat Attachments or Global Knowledge Base
-- **Chat Attachments:** Drag and drop files directly into an active conversation for ad-hoc, focused analysis.
-- **Global Knowledge Base:** Manage persistent documents accessible across every conversation with one-click indexing and removal.
+### ☁️ Optional Supabase Cloud Sync
+Sign in with Google OAuth to automatically back up your project workspaces and conversation history across devices.
+- **Privacy-First Hybrid Architecture:** LLM inference and embeddings run **100% locally via Ollama**. Only workspace metadata and chat titles sync to your private Supabase database protected by Row Level Security (RLS).
 
 ---
 
@@ -81,6 +93,7 @@ Every fact and synthesis is backed by verified sources. Clickable citation pills
  ┌────────────────────────────────────────────────────────┐
  │  💬 Local Synthesis (Ollama: Qwen 2.5 3B)              │
  │  • Max native context window: 32,768                   │
+ │  • Injected Project Custom Instructions                │
  │  • Grounded answer generation with page citations      │
  └────────────────────────────────────────────────────────┘
 ```
@@ -124,12 +137,18 @@ npm install
 cp .env.example .env.local
 ```
 
-Default configuration in `.env.local`:
+Configuration in `.env.local`:
 ```env
 OLLAMA_HOST=http://127.0.0.1:11434
 CHAT_MODEL=qwen2.5:3b
 EMBEDDING_MODEL=snowflake-arctic-embed
+
+# Optional: Supabase Cloud Sync
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-publishable-key
 ```
+
+*(If using Supabase Cloud Sync, run the SQL script in `supabase/schema.sql` inside your Supabase SQL Editor).*
 
 ### 5. Launch the Studio
 ```bash
@@ -141,7 +160,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser and star
 
 ## 🛡️ Privacy & Security Guarantee
 
-- **Zero Cloud Leakage:** All computation, embedding generation, OCR parsing, and LLM inference happen strictly on `localhost`.
+- **Zero Cloud Leakage:** All LLM computation, embedding generation, OCR parsing, and document searching happen strictly on `localhost`.
 - **Safe by Default:** Uploaded documents (`data/documents/*`) and vector indexes (`data/vector-store.json`) are automatically ignored by `.gitignore`.
 - **No Telemetry:** No user analytics or tracking scripts are embedded.
 
@@ -151,7 +170,8 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser and star
 
 - **Framework:** Next.js 16 (App Router, Turbopack)
 - **AI Streaming:** Vercel AI SDK (`@ai-sdk/react`, `streamText`)
-- **Local Engine:** Ollama API (`qwen2.5:3b`)
+- **Local LLM & Embeddings:** Ollama API (`qwen2.5:3b`, `snowflake-arctic-embed`)
+- **Cloud Sync:** Supabase (Auth, PostgreSQL, Row Level Security)
 - **OCR Engine:** Tesseract.js (Offline language packs)
 - **Styling:** Tailwind CSS with custom editorial color palette
 - **Markdown & Code:** ReactMarkdown, remark-gfm
