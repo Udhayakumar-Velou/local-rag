@@ -283,6 +283,9 @@ function ChatApp() {
 
   const activeIdRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -470,11 +473,36 @@ function ChatApp() {
     });
   }, [messages, activeId, ready, isLoading, supabase, user, activeProjectId]);
 
+  const handleChatScroll = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceFromBottom < 80;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollBottomBtn(!nearBottom && el.scrollHeight > el.clientHeight + 150);
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = false) => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+    isNearBottomRef.current = true;
+    setShowScrollBottomBtn(false);
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: isLoading ? 'auto' : 'smooth',
-      block: 'end',
-    });
+    // Only auto-scroll down if user is already at the bottom.
+    // If user scrolled up to read earlier text, never hijack their scroll or cause flicker!
+    if (isNearBottomRef.current) {
+      const el = chatContainerRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
   }, [messages, isLoading]);
 
   useEffect(() => {
@@ -535,7 +563,10 @@ function ChatApp() {
       return updated;
     });
     textareaRef.current?.focus();
-  }, [isLoading, setMessages]);
+    isNearBottomRef.current = true;
+    setShowScrollBottomBtn(false);
+    requestAnimationFrame(() => scrollToBottom(false));
+  }, [isLoading, setMessages, scrollToBottom]);
 
   const switchConversation = useCallback(
     (conversation: Conversation) => {
@@ -563,8 +594,11 @@ function ChatApp() {
       } else {
         setActiveProjectId(null);
       }
+      isNearBottomRef.current = true;
+      setShowScrollBottomBtn(false);
+      requestAnimationFrame(() => scrollToBottom(false));
     },
-    [isLoading, setMessages],
+    [isLoading, setMessages, scrollToBottom],
   );
 
   const deleteConversation = useCallback(
@@ -918,6 +952,10 @@ function ChatApp() {
       startTime: Date.now(),
       durationMs: 0,
     });
+
+    isNearBottomRef.current = true;
+    setShowScrollBottomBtn(false);
+    requestAnimationFrame(() => scrollToBottom(true));
 
     try {
       const fileList = new DataTransfer();
@@ -1537,7 +1575,11 @@ function ChatApp() {
         </header>
 
         {/* Message Thread */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={chatContainerRef}
+          onScroll={handleChatScroll}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
           <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 sm:px-8">
             {messages.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center pb-12">
@@ -1850,6 +1892,22 @@ function ChatApp() {
             )}
           </div>
         </div>
+
+        {/* Scroll To Bottom Floating Button (appears when user scrolled up) */}
+        {showScrollBottomBtn && (
+          <div className="pointer-events-none sticky bottom-3 z-20 flex justify-center">
+            <button
+              type="button"
+              onClick={() => scrollToBottom(true)}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#ded9cf] bg-[#fdfcf9] px-3.5 py-1.5 text-xs font-medium text-stone-700 shadow-md hover:border-stone-400 hover:bg-white hover:text-stone-900 transition animate-in fade-in slide-in-from-bottom-2 duration-150"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-stone-500" stroke="currentColor" strokeWidth="2.2">
+                <path d="M19 14l-7 7m0 0l-7-7m7 7V3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Scroll to bottom</span>
+            </button>
+          </div>
+        )}
 
         {/* Message Composer */}
         <div className="shrink-0 px-3 pb-4 pt-2 sm:px-8 sm:pb-6">
