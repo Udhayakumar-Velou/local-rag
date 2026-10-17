@@ -36,8 +36,9 @@ yarn-error.log*
 next-env.d.ts
 
 # Local RAG data (keep directory structure with .gitkeep, ignore local files and vectors)
-/data/documents/*
-!/data/documents/.gitkeep
-/data/vector-store.json
-/data/tessdata/*.gz
+data/documents/*
+!data/documents/.gitkeep
+data/vector-store.json
+data/tessdata/*.gz
+
 
