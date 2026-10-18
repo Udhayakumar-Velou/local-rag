@@ -71,3 +71,61 @@ create policy "Users can delete their own conversations"
 create index if not exists idx_projects_user_id on public.projects(user_id);
 create index if not exists idx_conversations_user_id on public.conversations(user_id);
 create index if not exists idx_conversations_project_id on public.conversations(project_id);
+
+-- 7. Create Job Leads Table for Autonomous Lead Agent (France Job Search)
+create table if not exists public.job_leads (
+  id text primary key,
+  user_id uuid references auth.users(id) on delete cascade,
+  canonical_key text not null,
+  job_data jsonb not null,
+  user_status text not null default 'inbox',
+  overall_score integer not null default 0,
+  job_category text not null default 'Combined AI + Software Engineering',
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.job_leads enable row level security;
+
+create policy "Anyone can view job leads"
+  on public.job_leads for select
+  using (true);
+
+create policy "Service or users can insert job leads"
+  on public.job_leads for insert
+  with check (true);
+
+create policy "Service or users can update job leads"
+  on public.job_leads for update
+  using (true);
+
+create index if not exists idx_job_leads_canonical_key on public.job_leads(canonical_key);
+create index if not exists idx_job_leads_overall_score on public.job_leads(overall_score desc);
+
+-- 8. Create Lead Agent Settings Table (Stores Personal Profile, Master Prompt & CVs in Cloud; API Key stays in .env / Cloud Secrets)
+create table if not exists public.lead_agent_settings (
+  id text primary key default 'default',
+  user_id uuid references auth.users(id) on delete cascade,
+  candidate_name text default '',
+  candidate_headline text default '',
+  cv_en_name text default 'CV_EN.pdf',
+  cv_fr_name text default 'CV_FR.pdf',
+  master_prompt text default '',
+  search_queries jsonb default '["AI Engineer", "LLM RAG Python", "React TypeScript", "Frontend Engineer React", "Full Stack React Python"]'::jsonb,
+  scan_frequency text default '6h',
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.lead_agent_settings enable row level security;
+
+create policy "Users can view lead agent settings"
+  on public.lead_agent_settings for select
+  using (true);
+
+create policy "Users can insert lead agent settings"
+  on public.lead_agent_settings for insert
+  with check (true);
+
+create policy "Users can update lead agent settings"
+  on public.lead_agent_settings for update
+  using (true);

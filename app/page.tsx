@@ -23,6 +23,7 @@ import {
   saveCloudConversation,
   deleteCloudConversation,
 } from '@/lib/supabase/sync';
+import { LeadAgentView } from '@/components/LeadAgentView';
 
 interface Conversation {
   id: string;
@@ -262,6 +263,7 @@ function ChatApp() {
   const [activeId, setActiveId] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [activeView, setActiveView] = useState<'chat' | 'lead-agent'>('chat');
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [imageError, setImageError] = useState('');
@@ -538,6 +540,7 @@ function ChatApp() {
     activeIdRef.current = conversation.id;
     setActiveId(conversation.id);
     setActiveProjectId(targetProjId);
+    setActiveView('chat');
     setMessages([]);
     setInput('');
     setSelectedImages([]);
@@ -573,6 +576,7 @@ function ChatApp() {
       if (isLoading) return;
       activeIdRef.current = conversation.id;
       setActiveId(conversation.id);
+      setActiveView('chat');
       setMessages(conversation.messages ?? []);
       setInput('');
       setSelectedImages([]);
@@ -1092,7 +1096,34 @@ function ChatApp() {
         </div>
 
         {/* Unified Scrollable Sidebar: Projects with Nested Chats + Conversations */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-2 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-2 space-y-3">
+          {/* LEAD AGENT SHORTCUT */}
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveView('lead-agent');
+                setSidebarOpen(false);
+              }}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs transition ${
+                activeView === 'lead-agent'
+                  ? 'bg-[#ded9cf] text-stone-900 font-semibold shadow-2xs'
+                  : 'text-stone-700 hover:bg-[#ded9cf]/60 hover:text-stone-900 font-medium'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-amber-500/15 text-amber-800">
+                  ⚡
+                </span>
+                <span className="font-medium text-[13px]">Lead Agent</span>
+              </div>
+              <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            </button>
+          </div>
+
           {/* PROJECTS SECTION */}
           <div>
             <div className="flex items-center justify-between px-1 mb-1.5">
@@ -1512,20 +1543,37 @@ function ChatApp() {
         </div>
       </aside>
 
-      {/* Main Chat Area */}
-      <section className="relative flex min-w-0 flex-1 flex-col bg-[#f7f5f0]">
+      {/* Main Content: Lead Agent vs Chat Area */}
+      {activeView === 'lead-agent' ? (
+        <section className="relative flex min-w-0 flex-1 flex-col bg-[#fdfcf9]">
+          <LeadAgentView
+            onBackToChat={() => setActiveView('chat')}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        </section>
+      ) : (
+        <section className="relative flex min-w-0 flex-1 flex-col bg-[#f7f5f0]">
         {/* Minimalist Warm Light Top Navigation Bar */}
-        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-[#e2dfd7] bg-[#f7f5f0]/85 px-4 backdrop-blur-md sm:px-6">
-          <div className="flex min-w-0 items-center gap-2.5">
+        <header className="flex h-14 sm:h-16 shrink-0 items-center justify-between gap-2 border-b border-[#e2dfd7] bg-[#f7f5f0]/85 px-3 backdrop-blur-md sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               aria-label="Open sidebar"
               onClick={() => setSidebarOpen(true)}
-              className="rounded-lg p-1.5 text-stone-500 hover:bg-[#eeece5] hover:text-stone-800 md:hidden"
+              className="rounded-lg p-1.5 text-stone-600 hover:bg-[#eeece5] hover:text-stone-900 md:hidden"
             >
-              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.7">
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8">
                 <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
               </svg>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveView('lead-agent')}
+              className="flex md:hidden items-center gap-1.5 rounded-xl border border-amber-300/80 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 shadow-2xs"
+            >
+              <span>⚡</span>
+              <span>Jobs</span>
             </button>
 
             {/* Current Project Pill (if any) */}
@@ -1536,14 +1584,14 @@ function ChatApp() {
               return (
                 <div
                   onClick={(e) => openEditProject(currentProj, e)}
-                  className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-3 py-1.5 text-xs text-stone-800 shadow-2xs hover:border-[#cfc9be] hover:bg-white transition"
+                  className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-2.5 py-1.5 text-xs text-stone-800 shadow-2xs hover:border-[#cfc9be] hover:bg-white transition"
                   title={`Project: ${currentProj.name}${currentProj.custom_prompt ? ' (Custom instructions active)' : ''}. Click to edit settings.`}
                 >
                   <IconFolder
                     className="h-4 w-4 shrink-0"
                     style={{ color: currentProj.color || '#6366f1' }}
                   />
-                  <span className="max-w-[180px] truncate font-medium">{currentProj.name}</span>
+                  <span className="max-w-[120px] sm:max-w-[180px] truncate font-medium">{currentProj.name}</span>
                 </div>
               );
             })()}
@@ -1551,23 +1599,23 @@ function ChatApp() {
 
           {/* Live Working Token Metrics Counter */}
           <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-2.5 rounded-xl border border-[#ded9cf] bg-[#eeece5] px-3 py-1.5 shadow-2xs">
+            <div className="flex items-center gap-2 rounded-xl border border-[#ded9cf] bg-[#eeece5] px-2.5 py-1.5 shadow-2xs">
               <span className={`h-1.5 w-1.5 rounded-full ${isLoading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
               <div className="text-[11px] font-medium text-stone-600">
                 <span>In: {formatNumber(displayInputTokens)}</span>
-                <span className="mx-1.5 text-stone-300">|</span>
+                <span className="mx-1 sm:mx-1.5 text-stone-300">|</span>
                 <span>Out: {formatNumber(displayOutputTokens)}</span>
                 {tokensPerSecond > 0 && (
-                  <>
+                  <span className="hidden sm:inline">
                     <span className="mx-1.5 text-stone-300">|</span>
                     <span className="text-emerald-600 font-medium">{tokensPerSecond} tok/s</span>
-                  </>
+                  </span>
                 )}
                 {durationMs > 0 && (
-                  <>
+                  <span className="hidden sm:inline">
                     <span className="mx-1.5 text-stone-300">|</span>
                     <span>{(durationMs / 1000).toFixed(1)}s</span>
-                  </>
+                  </span>
                 )}
               </div>
             </div>
@@ -2135,6 +2183,7 @@ function ChatApp() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Slide-out Document Citation & Passage Preview Drawer */}
       {previewDrawer && (
@@ -2180,12 +2229,12 @@ function ChatApp() {
 
       {/* Knowledge Base & Document Manager Modal */}
       {docModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-2 sm:p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 sm:px-6 py-4">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-100 text-zinc-800">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-800">
                   <IconDatabase className="h-4 w-4 text-zinc-800" />
                 </div>
                 <div>
@@ -2203,11 +2252,11 @@ function ChatApp() {
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex border-b border-zinc-100 px-6 pt-2">
+            <div className="flex overflow-x-auto scrollbar-none border-b border-zinc-100 px-4 sm:px-6 pt-2">
               <button
                 type="button"
                 onClick={() => setDocModalTab('global')}
-                className={`relative pb-3 pt-1 text-xs transition ${
+                className={`relative shrink-0 pb-3 pt-1 text-xs transition ${
                   docModalTab === 'global'
                     ? 'font-semibold text-zinc-900 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-emerald-600'
                     : 'font-medium text-zinc-400 hover:text-zinc-700'
@@ -2218,7 +2267,7 @@ function ChatApp() {
               <button
                 type="button"
                 onClick={() => setDocModalTab('chat')}
-                className={`relative ml-6 pb-3 pt-1 text-xs transition ${
+                className={`relative shrink-0 ml-6 pb-3 pt-1 text-xs transition ${
                   docModalTab === 'chat'
                     ? 'font-semibold text-zinc-900 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-600'
                     : 'font-medium text-zinc-400 hover:text-zinc-700'
@@ -2229,10 +2278,10 @@ function ChatApp() {
             </div>
 
             {/* Modal Tab Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               {docModalTab === 'global' ? (
                 <div>
-                  <div className="mb-4 flex items-center justify-between">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-xs font-semibold text-zinc-800">Global Knowledge Documents</h3>
                       <p className="text-[11px] text-zinc-500">
@@ -2243,7 +2292,7 @@ function ChatApp() {
                       type="button"
                       disabled={uploadingDoc}
                       onClick={() => docInputRef.current?.click()}
-                      className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-2xs transition hover:bg-emerald-100 disabled:opacity-40"
+                      className="flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-2xs transition hover:bg-emerald-100 disabled:opacity-40"
                     >
                       <span>＋</span>
                       <span>Upload to Global</span>

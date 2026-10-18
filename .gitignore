@@ -39,6 +39,8 @@ next-env.d.ts
 data/documents/*
 !data/documents/.gitkeep
 data/vector-store.json
+data/job-leads.json
+data/lead-agent-settings.json
 data/tessdata/*.gz
 
 

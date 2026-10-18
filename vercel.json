@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "app/api/lead-agent/scan/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/lead-agent/evaluate/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/lead-agent/scan",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}
