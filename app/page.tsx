@@ -263,10 +263,22 @@ function ChatApp() {
   const [activeId, setActiveId] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const [activeView, setActiveView] = useState<'chat' | 'lead-agent'>('chat');
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [imageError, setImageError] = useState('');
+  const [activeView, setActiveView] = useState<'chat' | 'lead-agent'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('rag_active_view');
+      if (saved === 'lead-agent' || saved === 'chat') return saved;
+    }
+    return 'chat';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_active_view', activeView);
+    } catch {}
+  }, [activeView]);
 
   // Knowledge base state
   const [documents, setDocuments] = useState<StoredDocItem[]>([]);
@@ -425,17 +437,47 @@ function ChatApp() {
     });
 
     fetchCloudConversations(supabase).then((cloudConvs) => {
-      if (cloudConvs.length > 0) {
-        const mapped: Conversation[] = cloudConvs.map((c) => ({
-          id: c.id,
-          title: c.title,
-          messages: c.messages,
-          updatedAt: c.updated_at,
-          projectId: c.project_id,
-        }));
-        setConversations(mapped);
-        safeSaveConversations(mapped);
-      }
+      setConversations((currentLocal) => {
+        if (cloudConvs.length > 0) {
+          const cloudIds = new Set(cloudConvs.map((c) => c.id));
+          const mappedCloud: Conversation[] = cloudConvs.map((c) => ({
+            id: c.id,
+            title: c.title,
+            messages: c.messages,
+            updatedAt: c.updated_at,
+            projectId: c.project_id,
+          }));
+
+          // Preserve and migrate any local conversations not yet saved to the cloud
+          const unuploadedLocal = currentLocal.filter(
+            (c) => !cloudIds.has(c.id) && (c.messages?.length > 0 || c.title !== 'New conversation')
+          );
+          unuploadedLocal.forEach((c) => {
+            saveCloudConversation(supabase, c, c.projectId);
+          });
+
+          const merged = [...mappedCloud, ...unuploadedLocal].sort((a, b) => b.updatedAt - a.updatedAt);
+          safeSaveConversations(merged);
+
+          // Restore messages for the active conversation
+          if (merged.length > 0) {
+            setActiveId(merged[0].id);
+            activeIdRef.current = merged[0].id;
+            setMessages(merged[0].messages ?? []);
+            if (merged[0].projectId) setActiveProjectId(merged[0].projectId);
+          }
+          return merged;
+        } else if (currentLocal.length > 0) {
+          // First time cloud sync: migrate existing local conversations to Supabase
+          currentLocal
+            .filter((c) => c.messages?.length > 0 || c.title !== 'New conversation')
+            .forEach((c) => {
+              saveCloudConversation(supabase, c, c.projectId);
+            });
+          return currentLocal;
+        }
+        return currentLocal;
+      });
     });
   }, [supabase, user]);
 

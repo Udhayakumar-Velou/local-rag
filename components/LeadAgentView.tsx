@@ -22,18 +22,49 @@ const TAB_DISPLAY_LABELS: Record<DashboardTab, string> = {
 
 export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProps) {
   // Tabs matching Section 10 of Master Prompt + All Jobs overview tab
-  const [activeTab, setActiveTab] = useState<DashboardTab>('All Jobs');
-  const [jobs, setJobs] = useState<EvaluatedJob[]>([]);
-  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('lead_agent_tab');
+      if (saved) return saved as DashboardTab;
+    }
+    return 'All Jobs';
+  });
+
+  const [jobs, setJobs] = useState<EvaluatedJob[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('lead_agent_cached_jobs');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return [];
+  });
+
+  const [loadingJobs, setLoadingJobs] = useState(jobs.length === 0);
   const [isScanningFrance, setIsScanningFrance] = useState(false);
-  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('lead_agent_cached_last_scan') || null;
+      } catch {}
+    }
+    return null;
+  });
   const [scanBanner, setScanBanner] = useState<string | null>(null);
 
   // Collapsible drawer for advanced filters & live LinkedIn quick search
   const [showFiltersDrawer, setShowFiltersDrawer] = useState(false);
 
   // Quick Search State (1-click live search across France without re-entering API key)
-  const [quickSearchInput, setQuickSearchInput] = useState('');
+  const [quickSearchInput, setQuickSearchInput] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('lead_agent_quick_search') || '';
+    }
+    return '';
+  });
 
   // Private Settings State (Loaded from Supabase Cloud / gitignored store — zero personal info in Git code)
   const [candidateName, setCandidateName] = useState('');
@@ -49,14 +80,86 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSavedMsg, setSettingsSavedMsg] = useState('');
 
-  // Local UI Filters
-  const [searchQuery, setSearchQuery] = useState('');
-  const [regionFilter, setRegionFilter] = useState('All France');
-  const [arrangementFilter, setArrangementFilter] = useState<'All' | 'Remote' | 'Hybrid' | 'On-site'>('All');
-  const [scoreFilter, setScoreFilter] = useState<'All' | '85+' | '70-84' | '55-69'>('All');
-  const [languageFilter, setLanguageFilter] = useState<'All' | 'EN' | 'FR'>('All');
-  const [freshnessFilter, setFreshnessFilter] = useState<'All' | 'New' | 'Previously Seen'>('All');
-  const [sortOrder, setSortOrder] = useState<'newest_posted' | 'new_scraped_first' | 'highest_score'>('newest_posted');
+  // Local UI Filters (persisted in localStorage so user searches are retained across logins and refreshes)
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('lead_agent_search') || '';
+    }
+    return '';
+  });
+  const [regionFilter, setRegionFilter] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('lead_agent_region') || 'All France';
+    }
+    return 'All France';
+  });
+  const [arrangementFilter, setArrangementFilter] = useState<'All' | 'Remote' | 'Hybrid' | 'On-site'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('lead_agent_arrangement') as any) || 'All';
+    }
+    return 'All';
+  });
+  const [scoreFilter, setScoreFilter] = useState<'All' | '85+' | '70-84' | '55-69'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('lead_agent_score') as any) || 'All';
+    }
+    return 'All';
+  });
+  const [languageFilter, setLanguageFilter] = useState<'All' | 'EN' | 'FR'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('lead_agent_lang') as any) || 'All';
+    }
+    return 'All';
+  });
+  const [freshnessFilter, setFreshnessFilter] = useState<'All' | 'New' | 'Previously Seen'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('lead_agent_freshness') as any) || 'All';
+    }
+    return 'All';
+  });
+  const [sortOrder, setSortOrder] = useState<'newest_posted' | 'new_scraped_first' | 'highest_score'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('lead_agent_sort') as any) || 'newest_posted';
+    }
+    return 'newest_posted';
+  });
+
+  // Keep filters synced to localStorage
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_tab', activeTab); } catch {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_search', searchQuery); } catch {}
+  }, [searchQuery]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_quick_search', quickSearchInput); } catch {}
+  }, [quickSearchInput]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_region', regionFilter); } catch {}
+  }, [regionFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_arrangement', arrangementFilter); } catch {}
+  }, [arrangementFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_score', scoreFilter); } catch {}
+  }, [scoreFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_lang', languageFilter); } catch {}
+  }, [languageFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_freshness', freshnessFilter); } catch {}
+  }, [freshnessFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('lead_agent_sort', sortOrder); } catch {}
+  }, [sortOrder]);
 
   // Modals
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -147,8 +250,13 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       const data = await res.json();
       if (res.ok && Array.isArray(data.allJobs)) {
         setJobs(data.allJobs);
-        setLastScanAt(data.lastScanAt || new Date().toISOString());
+        const scanTime = data.lastScanAt || new Date().toISOString();
+        setLastScanAt(scanTime);
         setScanBanner(data.summary || `Scan complete: ${data.allJobs.length} total verified jobs.`);
+        try {
+          localStorage.setItem('lead_agent_cached_jobs', JSON.stringify(data.allJobs));
+          localStorage.setItem('lead_agent_cached_last_scan', scanTime);
+        } catch {}
       } else {
         setScanBanner(data.error || 'Could not complete live scan.');
       }
@@ -159,11 +267,10 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     }
   }, []);
 
-  // Load persisted jobs on mount; if none stored yet, automatically trigger first live France scan
+  // Load persisted jobs on mount; NEVER automatically trigger live scan without user action
   useEffect(() => {
     let mounted = true;
     async function initJobs() {
-      setLoadingJobs(true);
       try {
         const res = await fetch('/api/lead-agent/jobs');
         const data = await res.json();
@@ -171,14 +278,18 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
 
         if (res.ok && Array.isArray(data.jobs) && data.jobs.length > 0) {
           setJobs(data.jobs);
-          setLastScanAt(data.lastScanAt || null);
-          setScanBanner(data.lastScanSummary || null);
-          setLoadingJobs(false);
-        } else {
-          setLoadingJobs(false);
-          handleTriggerLiveScan();
+          if (data.lastScanAt) setLastScanAt(data.lastScanAt);
+          if (data.lastScanSummary) setScanBanner(data.lastScanSummary);
+          try {
+            localStorage.setItem('lead_agent_cached_jobs', JSON.stringify(data.jobs));
+            if (data.lastScanAt) {
+              localStorage.setItem('lead_agent_cached_last_scan', data.lastScanAt);
+            }
+          } catch {}
         }
       } catch {
+        // Fallback to locally cached jobs
+      } finally {
         if (mounted) setLoadingJobs(false);
       }
     }
@@ -186,7 +297,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     return () => {
       mounted = false;
     };
-  }, [handleTriggerLiveScan]);
+  }, []);
 
   const handleRunGeminiEvaluation = async () => {
     if (!evalJobText.trim() && !evalJobTitle.trim()) {
@@ -444,6 +555,15 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     setLanguageFilter('All');
     setFreshnessFilter('All');
     setSortOrder('newest_posted');
+    try {
+      localStorage.removeItem('lead_agent_search');
+      localStorage.removeItem('lead_agent_region');
+      localStorage.removeItem('lead_agent_arrangement');
+      localStorage.removeItem('lead_agent_score');
+      localStorage.removeItem('lead_agent_lang');
+      localStorage.removeItem('lead_agent_freshness');
+      localStorage.removeItem('lead_agent_sort');
+    } catch {}
   };
 
   const getScoreColorBadge = (score: number) => {
