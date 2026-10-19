@@ -8,6 +8,7 @@ import {
 import {
   computeCanonicalJobKey,
   evaluateDiscoveredJobWithGemini,
+  evaluateJobHeuristicFallback,
 } from '@/lib/lead-agent/evaluator';
 import { loadStoredJobs, upsertEvaluatedJobs } from '@/lib/lead-agent/store';
 import { loadLeadAgentSettings } from '@/lib/lead-agent/settings';
@@ -92,55 +93,37 @@ async function executeFranceJobDiscovery(apiKey?: string, customQueries?: string
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Evaluate up to 6 brand-new unique listings per scan with rate pacing
-  const batchToEvaluate = rawDiscovered.slice(0, 6);
-  const newlyEvaluated: EvaluatedJob[] = [];
+  // Stage 1: Fast Heuristic Evaluation (0ms latency) for ALL newly discovered jobs (up to 12)
+  // This delivers fresh scraped jobs instantly without slow waiting or Vercel timeout risks.
+  const batchToProcess = rawDiscovered.slice(0, 12);
+  const newlyEvaluated: EvaluatedJob[] = batchToProcess.map((rawJob) =>
+    evaluateJobHeuristicFallback(rawJob)
+  );
 
-  for (let i = 0; i < batchToEvaluate.length; i++) {
-    const rawJob = batchToEvaluate[i];
-    if (i > 0 && effectiveApiKey) {
-      await sleep(1200); // Pace requests to stay comfortably within Gemini 15 RPM free tier limit
-    }
-    const evaluated = await evaluateDiscoveredJobWithGemini(
-      rawJob,
-      effectiveApiKey,
-      effectiveMasterPrompt
-    );
-    newlyEvaluated.push(evaluated);
-  }
-
-  // Also upgrade up to 3 existing heuristic-scored jobs to Gemini AI if API key is active
+  // Stage 2: Upgrade top 2 highest-scoring new listings with Gemini AI
   let upgradedCount = 0;
-  if (effectiveApiKey) {
-    const heuristicJobsToUpgrade = existingState.jobs
-      .filter((j) => j.userStatus !== 'archived' && j.scoredBy !== 'gemini')
-      .slice(0, 3);
+  if (effectiveApiKey && newlyEvaluated.length > 0) {
+    const topCandidates = [...newlyEvaluated]
+      .sort((a, b) => b.overallScore - a.overallScore)
+      .slice(0, 2);
 
-    for (const oldJob of heuristicJobsToUpgrade) {
-      await sleep(1200); // Pace upgrades
-      const upgraded = await evaluateDiscoveredJobWithGemini(
-        {
-          externalId: oldJob.id,
-          title: oldJob.exactJobTitle,
-          company: oldJob.companyName,
-          location: `${oldJob.city}, ${oldJob.region}, France`,
-          city: oldJob.city,
-          region: oldJob.region,
-          postedDate: oldJob.publicationDate,
-          postedAgo: oldJob.publicationDate,
-          jobUrl: oldJob.directApplicationUrl,
-          descriptionText: `${oldJob.exactJobTitle} at ${oldJob.companyName} in ${oldJob.city}, ${oldJob.region}. Skills: ${oldJob.strongestMatchingSkills.join(', ')}. ${oldJob.geminiSummary}`,
-          workingArrangement: oldJob.workingArrangement,
-          employmentType: oldJob.employmentType,
-          seniorityLevel: oldJob.seniorityLevel,
-          source: 'LinkedIn France',
-        },
-        effectiveApiKey,
-        effectiveMasterPrompt
-      );
-      if (upgraded.scoredBy === 'gemini') {
-        newlyEvaluated.push(upgraded);
-        upgradedCount++;
+    for (let i = 0; i < topCandidates.length; i++) {
+      const candidate = topCandidates[i];
+      if (i > 0) await sleep(1000);
+      const rawJob = rawDiscovered.find((r) => r.externalId === candidate.id);
+      if (rawJob) {
+        const geminiEvaluated = await evaluateDiscoveredJobWithGemini(
+          rawJob,
+          effectiveApiKey,
+          effectiveMasterPrompt
+        );
+        if (geminiEvaluated.scoredBy === 'gemini') {
+          const idx = newlyEvaluated.findIndex((j) => j.id === candidate.id);
+          if (idx !== -1) {
+            newlyEvaluated[idx] = geminiEvaluated;
+            upgradedCount++;
+          }
+        }
       }
     }
   }

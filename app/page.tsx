@@ -437,47 +437,52 @@ function ChatApp() {
     });
 
     fetchCloudConversations(supabase).then((cloudConvs) => {
-      setConversations((currentLocal) => {
-        if (cloudConvs.length > 0) {
-          const cloudIds = new Set(cloudConvs.map((c) => c.id));
-          const mappedCloud: Conversation[] = cloudConvs.map((c) => ({
-            id: c.id,
-            title: c.title,
-            messages: c.messages,
-            updatedAt: c.updated_at,
-            projectId: c.project_id,
-          }));
+      let currentLocal: Conversation[] = [];
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) currentLocal = parsed;
+        }
+      } catch {}
 
-          // Preserve and migrate any local conversations not yet saved to the cloud
-          const unuploadedLocal = currentLocal.filter(
-            (c) => !cloudIds.has(c.id) && (c.messages?.length > 0 || c.title !== 'New conversation')
-          );
-          unuploadedLocal.forEach((c) => {
+      if (cloudConvs.length > 0) {
+        const cloudIds = new Set(cloudConvs.map((c) => c.id));
+        const mappedCloud: Conversation[] = cloudConvs.map((c) => ({
+          id: c.id,
+          title: c.title,
+          messages: c.messages,
+          updatedAt: c.updated_at,
+          projectId: c.project_id,
+        }));
+
+        // Preserve and migrate any local conversations not yet saved to the cloud
+        const unuploadedLocal = currentLocal.filter(
+          (c) => !cloudIds.has(c.id) && (c.messages?.length > 0 || c.title !== 'New conversation')
+        );
+        unuploadedLocal.forEach((c) => {
+          saveCloudConversation(supabase, c, c.projectId);
+        });
+
+        const merged = [...mappedCloud, ...unuploadedLocal].sort((a, b) => b.updatedAt - a.updatedAt);
+        safeSaveConversations(merged);
+        setConversations(merged);
+
+        // Restore messages for the active conversation safely outside any updater function
+        if (merged.length > 0) {
+          setActiveId(merged[0].id);
+          activeIdRef.current = merged[0].id;
+          setMessages(merged[0].messages ?? []);
+          if (merged[0].projectId) setActiveProjectId(merged[0].projectId);
+        }
+      } else if (currentLocal.length > 0) {
+        // First time cloud sync: migrate existing local conversations to Supabase
+        currentLocal
+          .filter((c) => c.messages?.length > 0 || c.title !== 'New conversation')
+          .forEach((c) => {
             saveCloudConversation(supabase, c, c.projectId);
           });
-
-          const merged = [...mappedCloud, ...unuploadedLocal].sort((a, b) => b.updatedAt - a.updatedAt);
-          safeSaveConversations(merged);
-
-          // Restore messages for the active conversation
-          if (merged.length > 0) {
-            setActiveId(merged[0].id);
-            activeIdRef.current = merged[0].id;
-            setMessages(merged[0].messages ?? []);
-            if (merged[0].projectId) setActiveProjectId(merged[0].projectId);
-          }
-          return merged;
-        } else if (currentLocal.length > 0) {
-          // First time cloud sync: migrate existing local conversations to Supabase
-          currentLocal
-            .filter((c) => c.messages?.length > 0 || c.title !== 'New conversation')
-            .forEach((c) => {
-              saveCloudConversation(supabase, c, c.projectId);
-            });
-          return currentLocal;
-        }
-        return currentLocal;
-      });
+      }
     });
   }, [supabase, user]);
 
