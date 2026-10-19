@@ -16,8 +16,12 @@ export function computeCanonicalJobKey(company: string, title: string, city: str
 }
 
 /**
- * Detects whether the posting is primarily English or French per Section 6 of the Master Prompt.
- * Prioritizes English (CV_EN.pdf) unless the title or description is clearly written in French.
+ * Detects whether the posting is primarily English or French.
+ * In the French tech market, English technical titles (e.g. "Senior Frontend Software Engineer ReactJS - Paris - H/F")
+ * and technical keywords (React, TypeScript, Python) are used even when the job and company are French.
+ * If the job description is in French, contains French statutory markers (H/F, F/H, CDI, CDD, etc.),
+ * or French conversational text, CV_FR.pdf is recommended.
+ * Only postings genuinely written in English prose should receive CV_EN.pdf.
  */
 export function detectJobLanguageAndCv(title: string, description: string): {
   recommendedCv: 'CV_FR.pdf' | 'CV_EN.pdf';
@@ -25,20 +29,27 @@ export function detectJobLanguageAndCv(title: string, description: string): {
   languages: string[];
 } {
   const titleLower = title.toLowerCase();
-  const text = `${title} ${description}`.toLowerCase();
+  const descLower = (description || '').toLowerCase();
+  const text = `${titleLower} ${descLower}`;
 
+  // Statutory French labor markers (H/F, F/H, CDI, CDD, Alternance, Stage)
+  const hasStatutoryFrenchMarker =
+    /\b(h\/f|f\/h|h\/f\/x|cdi|cdd|stage|alternance)\b/i.test(titleLower) ||
+    /\b(h\/f|f\/h|h\/f\/x|cdi|cdd)\b/i.test(descLower);
+
+  // Explicit French job title keywords
   const hasExplicitFrenchTitle =
-    /\b(développeur|développeuse|ingénieur|ingénieure|concepteur|responsable|chargé|alternance|stage)\b/i.test(
+    /\b(développeur|développeuse|ingénieur|ingénieure|concepteur|conceptrice|responsable|chargé|chef de projet|stagiaire|alternant)\b/i.test(
       titleLower
     );
 
+  // French grammatical & organizational markers (structural French phrases)
   const frenchMarkers = [
-    'développeur',
-    'ingénieur',
+    'au sein de',
     'nous recherchons',
     'vos missions',
     'profil recherché',
-    'au sein de',
+    'notre équipe',
     'conception',
     'expérience',
     'télétravail',
@@ -46,43 +57,75 @@ export function detectJobLanguageAndCv(title: string, description: string): {
     'entreprise',
     'compétences',
     'rejoignez',
+    'rejoindre',
+    'rémunération',
+    'mutuelle',
+    'avantages',
+    'poste basé',
+    'vous ferez',
+    'vous serez',
+    'vous avez',
+    'de formation',
+    'bac+5',
+    "école d'ingénieur",
+    'dans le cadre',
+    'participer à',
   ];
+
+  // English structural phrases (conversational prose, NOT technical terms like react, developer, engineer)
   const englishMarkers = [
-    'we are looking',
+    'we are looking for',
     'responsibilities',
     'requirements',
-    'experience with',
-    'you will',
-    'our team',
-    'building',
     'qualifications',
-    'software engineer',
-    'frontend engineer',
-    'ai engineer',
-    'developer',
-    'full stack',
-    'working with',
+    'what you will do',
+    'about the role',
+    'join our team',
+    'you will be',
+    'you have',
+    'years of experience',
+    'working with our',
+    'equal opportunity',
+    'benefits include',
   ];
 
-  let frCount = hasExplicitFrenchTitle ? 3 : 0;
-  let enCount = 0;
+  let frCount = 0;
+  if (hasStatutoryFrenchMarker) frCount += 3;
+  if (hasExplicitFrenchTitle) frCount += 3;
+
   for (const m of frenchMarkers) {
-    if (text.includes(m)) frCount++;
-  }
-  for (const m of englishMarkers) {
-    if (text.includes(m)) enCount++;
+    if (text.includes(m)) frCount += 2;
   }
 
-  if (frCount > enCount) {
+  // Count common French stopwords in description that never occur in English
+  const frenchStopwords = descLower.match(/\b(vous|nous|pour|dans|avec|une|des|les|qui|sont|cette|votre|notre|au|aux|du|est|chez|selon)\b/g);
+  if (frenchStopwords && frenchStopwords.length >= 2) {
+    frCount += Math.min(frenchStopwords.length, 12);
+  }
+
+  let enCount = 0;
+  for (const m of englishMarkers) {
+    if (text.includes(m)) enCount += 2;
+  }
+
+  const englishStopwords = descLower.match(/\b(we|you|our|with|about|and|the|for|have|will|team)\b/g);
+  if (englishStopwords && englishStopwords.length >= 3) {
+    enCount += Math.min(englishStopwords.length, 10);
+  }
+
+  // Decision rule:
+  // If French markers or stopwords dominate, or if statutory French marker (H/F, CDI) is present and English is not dominant:
+  if (frCount >= enCount || (hasStatutoryFrenchMarker && frCount > 1)) {
     return {
       recommendedCv: 'CV_FR.pdf',
-      reason: 'The job advertisement and responsibilities are written primarily in French.',
+      reason: 'The job posting and responsibilities are in French (French statutory/market context). CV_FR.pdf is recommended for French recruitment.',
       languages: ['French (Fluent)', 'English (Professional)'],
     };
   }
+
   return {
     recommendedCv: 'CV_EN.pdf',
-    reason: 'The job advertisement is written in English for an international engineering environment.',
+    reason: 'The job advertisement and responsibilities are written in English for an international engineering team.',
     languages: ['English (Fluent)', 'French (Plus)'],
   };
 }
@@ -295,6 +338,12 @@ Job Description:
 ${raw.descriptionText}
 """
 
+IMPORTANT RULES FOR "recommendedCv":
+- You are evaluating job listings located in France. In the French tech market, technical titles (e.g., "Senior Frontend Software Engineer ReactJS - Paris - H/F") and framework names are written in English even for 100% French domestic employers.
+- DO NOT recommend "CV_EN.pdf" solely because the job title or technical stack contains English words.
+- If the job description text is written in French, or contains French statutory markers ("H/F", "F/H", "CDI", "CDD"), or is at a French company communicating in French, you MUST set "recommendedCv": "CV_FR.pdf".
+- Recommend "CV_EN.pdf" ONLY if the entire job description text and requirements are written in English prose for an international English-speaking engineering team.
+
 Return ONLY a valid JSON object with these exact keys:
 {
   "exactJobTitle": string,
@@ -328,11 +377,10 @@ Return ONLY a valid JSON object with these exact keys:
 }
 `;
 
+    // Only active, production Gemini Flash models (eliminates 404 errors)
     const modelsToTry = [
-      'gemini-3.8-flash',
-      'gemini-flash-latest',
-      'gemini-2.5-flash',
       'gemini-2.0-flash',
+      'gemini-1.5-flash',
     ];
 
     let rawJson = '';
@@ -363,6 +411,9 @@ Return ONLY a valid JSON object with these exact keys:
           rawJson = candidateText;
           break;
         }
+      } else if (res.status === 429) {
+        // Paced backoff on rate-limit
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
 
@@ -378,6 +429,18 @@ Return ONLY a valid JSON object with these exact keys:
 
     const parsed = JSON.parse(cleanedJson);
     const fallback = evaluateJobHeuristicFallback(raw);
+
+    // CV Recommendation: if heuristic statutory check verified French context, enforce CV_FR.pdf
+    const finalCv =
+      fallback.recommendedCv === 'CV_FR.pdf'
+        ? 'CV_FR.pdf'
+        : parsed.recommendedCv === 'CV_FR.pdf'
+        ? 'CV_FR.pdf'
+        : 'CV_EN.pdf';
+    const finalCvReason =
+      finalCv === 'CV_FR.pdf' && parsed.recommendedCv !== 'CV_FR.pdf'
+        ? fallback.cvRecommendationReason
+        : parsed.cvRecommendationReason || fallback.cvRecommendationReason;
 
     return {
       ...fallback,
@@ -419,9 +482,8 @@ Return ONLY a valid JSON object with these exact keys:
         ? parsed.potentialEligibilityConcerns
         : [],
       geminiSummary: parsed.geminiSummary || fallback.geminiSummary,
-      recommendedCv: parsed.recommendedCv === 'CV_FR.pdf' ? 'CV_FR.pdf' : 'CV_EN.pdf',
-      cvRecommendationReason:
-        parsed.cvRecommendationReason || fallback.cvRecommendationReason,
+      recommendedCv: finalCv,
+      cvRecommendationReason: finalCvReason,
       threeRequirementsToEmphasize:
         Array.isArray(parsed.threeRequirementsToEmphasize) &&
         parsed.threeRequirementsToEmphasize.length > 0

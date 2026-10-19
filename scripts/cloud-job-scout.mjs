@@ -169,8 +169,18 @@ async function runCloudScout() {
   const masterPrompt = settingsRow?.master_prompt || 'Evaluate job suitability against AI, React, TypeScript, and Python engineering profile in France.';
 
   console.log(`[Cloud Job Scout] Found ${discovered.length} new unique listings across France (<= 4 days old).`);
-  for (const raw of discovered.slice(0, 8)) {
-    const isFrench = /\b(développeur|développeuse|ingénieur|ingénieure|alternance|stage)\b/i.test(raw.title);
+  for (let i = 0; i < discovered.slice(0, 8).length; i++) {
+    const raw = discovered[i];
+    if (i > 0 && geminiApiKey) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
+    // Comprehensive French statutory and linguistic detection
+    const isFrench =
+      /\b(h\/f|f\/h|h\/f\/x|cdi|cdd|stage|alternance|développeur|développeuse|ingénieur|ingénieure|concepteur|responsable|chargé)\b/i.test(raw.title) ||
+      /\b(h\/f|f\/h|h\/f\/x|cdi|cdd|stage|alternance|au sein de|nous recherchons|vos missions|notre équipe|profil recherché|conception|expérience|télétravail|maîtrise|entreprise|compétences|rémunération|mutuelle|avantages)\b/i.test(raw.descriptionText || '') ||
+      /\b(vous|nous|pour|dans|avec|une|des|les|qui|sont|cette|votre|notre)\b/i.test(raw.descriptionText || '');
+
     let jobData = {
       id: raw.id,
       exactJobTitle: raw.title,
@@ -204,8 +214,8 @@ async function runCloudScout() {
       geminiSummary: `Discovered via scheduled cloud scout in ${raw.city} at ${raw.company}.`,
       recommendedCv: isFrench ? 'CV_FR.pdf' : 'CV_EN.pdf',
       cvRecommendationReason: isFrench
-        ? 'Posting title and context are in French.'
-        : 'Posting title and context are in English.',
+        ? 'The job posting and responsibilities are in French (French statutory/market context).'
+        : 'The job posting is written in English for an international engineering team.',
       threeRequirementsToEmphasize: [
         'Production React & TypeScript experience',
         'LLM & RAG pipeline engineering',
@@ -220,38 +230,56 @@ async function runCloudScout() {
 
     if (geminiApiKey) {
       try {
-        const evalPrompt = `Evaluate this job listing in France strictly according to the MASTER PROMPT.\nTitle: ${raw.title}\nCompany: ${raw.company}\nLocation: ${raw.city}, ${raw.region}\nPosted: ${raw.postedAgo}\nReturn ONLY valid JSON with keys: overallScore, matchCategory, jobCategory, scoreBreakdown, strongestMatchingSkills, geminiSummary, recommendedCv, cvRecommendationReason, threeRequirementsToEmphasize.`;
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: masterPrompt }] },
-              contents: [{ role: 'user', parts: [{ text: evalPrompt }] }],
-              generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
-            }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const parts = data.candidates?.[0]?.content?.parts || [];
-          const textPart = [...parts].reverse().find((p) => !p.thought && typeof p.text === 'string') || parts[0];
-          if (textPart?.text) {
-            const parsed = JSON.parse(textPart.text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim());
-            jobData = {
-              ...jobData,
-              overallScore: typeof parsed.overallScore === 'number' ? parsed.overallScore : jobData.overallScore,
-              matchCategory: parsed.matchCategory || jobData.matchCategory,
-              jobCategory: parsed.jobCategory || jobData.jobCategory,
-              scoreBreakdown: parsed.scoreBreakdown || jobData.scoreBreakdown,
-              strongestMatchingSkills: parsed.strongestMatchingSkills || jobData.strongestMatchingSkills,
-              geminiSummary: parsed.geminiSummary || jobData.geminiSummary,
-              recommendedCv: parsed.recommendedCv === 'CV_FR.pdf' ? 'CV_FR.pdf' : 'CV_EN.pdf',
-              cvRecommendationReason: parsed.cvRecommendationReason || jobData.cvRecommendationReason,
-              threeRequirementsToEmphasize: parsed.threeRequirementsToEmphasize || jobData.threeRequirementsToEmphasize,
-              scoredBy: 'gemini',
-            };
+        const evalPrompt = `Evaluate this job listing in France strictly according to the MASTER PROMPT.
+Title: ${raw.title}
+Company: ${raw.company}
+Location: ${raw.city}, ${raw.region}
+Posted: ${raw.postedAgo}
+
+IMPORTANT: In France, technical job titles (e.g., "Senior Frontend Software Engineer ReactJS - Paris - H/F") are often in English even for French positions. If the job description is in French, or contains French statutory markers (H/F, CDI, etc.), you MUST set recommendedCv to "CV_FR.pdf". Only recommend "CV_EN.pdf" if the description is entirely in English prose.
+
+Return ONLY valid JSON with keys: overallScore, matchCategory, jobCategory, scoreBreakdown, strongestMatchingSkills, geminiSummary, recommendedCv, cvRecommendationReason, threeRequirementsToEmphasize.`;
+
+        const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+        for (const model of modelsToTry) {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: masterPrompt }] },
+                contents: [{ role: 'user', parts: [{ text: evalPrompt }] }],
+                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+              }),
+            }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const parts = data.candidates?.[0]?.content?.parts || [];
+            const textPart = [...parts].reverse().find((p) => !p.thought && typeof p.text === 'string') || parts[0];
+            if (textPart?.text) {
+              const parsed = JSON.parse(textPart.text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim());
+              const finalCv = isFrench ? 'CV_FR.pdf' : parsed.recommendedCv === 'CV_FR.pdf' ? 'CV_FR.pdf' : 'CV_EN.pdf';
+              jobData = {
+                ...jobData,
+                overallScore: typeof parsed.overallScore === 'number' ? parsed.overallScore : jobData.overallScore,
+                matchCategory: parsed.matchCategory || jobData.matchCategory,
+                jobCategory: parsed.jobCategory || jobData.jobCategory,
+                scoreBreakdown: parsed.scoreBreakdown || jobData.scoreBreakdown,
+                strongestMatchingSkills: parsed.strongestMatchingSkills || jobData.strongestMatchingSkills,
+                geminiSummary: parsed.geminiSummary || jobData.geminiSummary,
+                recommendedCv: finalCv,
+                cvRecommendationReason: isFrench && parsed.recommendedCv !== 'CV_FR.pdf'
+                  ? 'The job posting and responsibilities are in French (French statutory/market context).'
+                  : parsed.cvRecommendationReason || jobData.cvRecommendationReason,
+                threeRequirementsToEmphasize: parsed.threeRequirementsToEmphasize || jobData.threeRequirementsToEmphasize,
+                scoredBy: 'gemini',
+              };
+              break;
+            }
+          } else if (res.status === 429) {
+            await new Promise((r) => setTimeout(r, 2000));
           }
         }
       } catch (e) {

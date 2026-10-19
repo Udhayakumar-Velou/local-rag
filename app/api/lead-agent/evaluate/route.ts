@@ -69,6 +69,38 @@ Return ONLY a valid JSON object with these exact keys:
   "relevantProjects": string[],
   "missingOrWeakerRequirements": string[],
   "potentialEligibilityConcerns": string[],
+IMPORTANT RULES FOR "recommendedCv":
+- Target country is France. English technical titles (e.g. "Senior Frontend Software Engineer ReactJS - Paris - H/F") are customary in France.
+- DO NOT recommend "CV_EN.pdf" solely because the job title or technical stack contains English words.
+- If the job description is in French, contains French statutory markers ("H/F", "F/H", "CDI", "CDD"), or is at a French company communicating in French, you MUST set "recommendedCv": "CV_FR.pdf".
+- Recommend "CV_EN.pdf" ONLY if the entire job description text and requirements are written in English prose for an international team.
+
+Return ONLY a valid JSON object with these exact keys:
+{
+  "exactJobTitle": string,
+  "companyName": string,
+  "city": string,
+  "region": string,
+  "employmentType": "CDI" | "CDD" | "Full-time" | "Part-time" | "Contract",
+  "seniorityLevel": "Junior" | "Mid-level" | "Senior" | "Lead",
+  "workingArrangement": "Remote" | "Hybrid" | "On-site",
+  "salary": string,
+  "requiredLanguages": string[],
+  "overallScore": number,
+  "matchCategory": "Excellent match" | "Strong match" | "Possible match" | "Low priority",
+  "jobCategory": "AI Engineering" | "React / Frontend" | "Combined AI + Software Engineering" | "Related Opportunities",
+  "scoreBreakdown": {
+    "technicalSkillsScore": number,
+    "experienceAlignmentScore": number,
+    "seniorityFitScore": number,
+    "relevanceScore": number,
+    "workingArrangementScore": number
+  },
+  "strongestMatchingSkills": string[],
+  "relevantExperience": string[],
+  "relevantProjects": string[],
+  "missingOrWeakerRequirements": string[],
+  "potentialEligibilityConcerns": string[],
   "geminiSummary": string,
   "recommendedCv": "CV_EN.pdf" | "CV_FR.pdf",
   "cvRecommendationReason": string,
@@ -76,11 +108,10 @@ Return ONLY a valid JSON object with these exact keys:
 }
 `;
 
+    // Only active, production Gemini Flash models (eliminates 404 errors)
     const modelsToTry = [
-      'gemini-3.8-flash',
-      'gemini-flash-latest',
-      'gemini-2.5-flash',
       'gemini-2.0-flash',
+      'gemini-1.5-flash',
     ];
 
     let rawJson = '';
@@ -115,6 +146,9 @@ Return ONLY a valid JSON object with these exact keys:
       } else {
         lastStatus = response.status;
         lastErrorText = await response.text();
+        if (response.status === 429) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
       }
     }
 

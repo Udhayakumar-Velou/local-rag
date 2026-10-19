@@ -90,11 +90,17 @@ async function executeFranceJobDiscovery(apiKey?: string, customQueries?: string
     addUniqueJobs(regionalFound);
   }
 
-  // Evaluate up to 8 brand-new unique listings per scan
-  const batchToEvaluate = rawDiscovered.slice(0, 8);
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Evaluate up to 6 brand-new unique listings per scan with rate pacing
+  const batchToEvaluate = rawDiscovered.slice(0, 6);
   const newlyEvaluated: EvaluatedJob[] = [];
 
-  for (const rawJob of batchToEvaluate) {
+  for (let i = 0; i < batchToEvaluate.length; i++) {
+    const rawJob = batchToEvaluate[i];
+    if (i > 0 && effectiveApiKey) {
+      await sleep(1200); // Pace requests to stay comfortably within Gemini 15 RPM free tier limit
+    }
     const evaluated = await evaluateDiscoveredJobWithGemini(
       rawJob,
       effectiveApiKey,
@@ -103,14 +109,15 @@ async function executeFranceJobDiscovery(apiKey?: string, customQueries?: string
     newlyEvaluated.push(evaluated);
   }
 
-  // Also upgrade up to 6 existing heuristic-scored jobs to Gemini AI if API key is now active
+  // Also upgrade up to 3 existing heuristic-scored jobs to Gemini AI if API key is active
   let upgradedCount = 0;
   if (effectiveApiKey) {
     const heuristicJobsToUpgrade = existingState.jobs
       .filter((j) => j.userStatus !== 'archived' && j.scoredBy !== 'gemini')
-      .slice(0, 6);
+      .slice(0, 3);
 
     for (const oldJob of heuristicJobsToUpgrade) {
+      await sleep(1200); // Pace upgrades
       const upgraded = await evaluateDiscoveredJobWithGemini(
         {
           externalId: oldJob.id,

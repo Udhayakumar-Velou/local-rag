@@ -28,4 +28,15 @@ Salary must have zero impact on the numerical match score. Do not exclude or pen
 3. Seniority and realistic role fit: 15 points.
 4. Relevance to AI engineering, React/frontend, or combined roles: 15 points.
 5. Working arrangement and practical eligibility: 10 points.
+
+## 6. CV RECOMMENDATION RULES (CV_FR.pdf vs CV_EN.pdf)
+- **Target Country**: France. In the French tech market, English technical job titles (e.g. "Senior Frontend Software Engineer", "Full Stack Developer", "AI Engineer", "React Developer") and technical buzzwords are standard even for purely French positions.
+- **NEVER** recommend CV_EN.pdf simply because the title or technical stack includes English words like "Software Engineer", "Frontend", "React", or "Developer".
+- **Recommend CV_FR.pdf** whenever:
+  1. The job description, responsibilities, or company introduction is written in French.
+  2. The job title or description contains French statutory markers such as "H/F", "F/H", "CDI", "CDD", "Stage", "Alternance", "Développeur", or "Ingénieur".
+  3. The employer is a French company or domestic organization communicating in French.
+- **Recommend CV_EN.pdf ONLY when**:
+  1. The entire job description and responsibilities are written in English prose.
+  2. The position explicitly requires English as the primary working language for an international environment.
 `;
