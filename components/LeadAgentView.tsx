@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EvaluatedJob, DashboardTab, UserStatus } from '@/lib/lead-agent/types';
 import { DEFAULT_GENERIC_MASTER_PROMPT } from '@/lib/lead-agent/master-prompt';
 
@@ -258,10 +258,6 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       localStorage.setItem('lead_agent_view_mode', viewMode);
     } catch {}
   }, [viewMode]);
-
-  // Drag and Drop state for Azure Task Manager-style Kanban board
-  const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
-  const [dragOverColumnId, setDragOverColumnId] = useState<UserStatus | null>(null);
 
   // Quick Search State (1-click live search across France without re-entering API key)
   const [quickSearchInput, setQuickSearchInput] = useState(() => {
@@ -611,6 +607,125 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     } catch {
       // Optimistic UI already updated
     }
+  };
+
+  // Seamless Universal Pointer & Touch Drag-and-Drop state (Desktop & Mobile)
+  const [activeDragJob, setActiveDragJob] = useState<EvaluatedJob | null>(null);
+  const [dragPointerPos, setDragPointerPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragCardDimensions, setDragCardDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<UserStatus | null>(null);
+  const kanbanContainerRef = useRef<HTMLDivElement | null>(null);
+  const dragCandidateRef = useRef<{
+    job: EvaluatedJob;
+    startX: number;
+    startY: number;
+    rect: DOMRect;
+  } | null>(null);
+  const dragJobRef = useRef<EvaluatedJob | null>(null);
+  dragJobRef.current = activeDragJob;
+
+  useEffect(() => {
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      // 1. If candidate hasn't reached movement threshold yet, test distance (4px)
+      if (dragCandidateRef.current && !dragJobRef.current) {
+        const dist = Math.hypot(
+          e.clientX - dragCandidateRef.current.startX,
+          e.clientY - dragCandidateRef.current.startY
+        );
+        if (dist > 4) {
+          const candidate = dragCandidateRef.current;
+          setActiveDragJob(candidate.job);
+          setDragCardDimensions({ width: candidate.rect.width, height: candidate.rect.height });
+          setDragPointerPos({ x: e.clientX, y: e.clientY });
+          setDragOverColumnId(candidate.job.userStatus);
+        }
+      }
+
+      // 2. If actively dragging, update coordinate and highlight target column
+      if (dragJobRef.current) {
+        setDragPointerPos({ x: e.clientX, y: e.clientY });
+
+        // Auto-scroll Kanban horizontal view near edges
+        if (kanbanContainerRef.current) {
+          const container = kanbanContainerRef.current;
+          const rect = container.getBoundingClientRect();
+          if (e.clientX < rect.left + 50) {
+            container.scrollLeft -= 10;
+          } else if (e.clientX > rect.right - 50) {
+            container.scrollLeft += 10;
+          }
+        }
+
+        // Detect column element under cursor/finger
+        const elements = document.elementsFromPoint(e.clientX, e.clientY);
+        let foundColId: UserStatus | null = null;
+        for (const el of elements) {
+          const colId = el.getAttribute('data-kanban-column-id');
+          if (colId) {
+            foundColId = colId as UserStatus;
+            break;
+          }
+        }
+        setDragOverColumnId(foundColId);
+      }
+    };
+
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      const currentJob = dragJobRef.current;
+      if (currentJob) {
+        const elements = document.elementsFromPoint(e.clientX, e.clientY);
+        let targetCol: UserStatus | null = null;
+        for (const el of elements) {
+          const colId = el.getAttribute('data-kanban-column-id');
+          if (colId) {
+            targetCol = colId as UserStatus;
+            break;
+          }
+        }
+
+        if (targetCol && targetCol !== currentJob.userStatus) {
+          updateJobStatus(currentJob.id, targetCol);
+        }
+
+        setActiveDragJob(null);
+        setDragPointerPos(null);
+        setDragCardDimensions(null);
+        setDragOverColumnId(null);
+      }
+      dragCandidateRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handleGlobalPointerMove, { passive: true });
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+  }, []);
+
+  const handleStartDrag = (e: React.PointerEvent, job: EvaluatedJob) => {
+    // Only primary mouse button or touch
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a') || target.closest('select')) {
+      return;
+    }
+
+    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
+    const rect = cardEl
+      ? cardEl.getBoundingClientRect()
+      : (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+    dragCandidateRef.current = {
+      job,
+      startX: e.clientX,
+      startY: e.clientY,
+      rect,
+    };
   };
 
   // Tab membership rule:
@@ -1317,38 +1432,24 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
             })}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-3 sm:px-6 py-4 snap-x snap-mandatory scroll-smooth">
+          <div
+            ref={kanbanContainerRef}
+            className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-3 sm:px-6 py-4 snap-x snap-mandatory scroll-smooth"
+          >
             <div className="flex gap-3 sm:gap-4 h-full min-w-max pb-2">
               {KANBAN_COLUMNS.map((col) => {
                 const colJobs = getKanbanColumnJobs(col.id);
-                const isOver = dragOverColumnId === col.id;
+                const isOver = dragOverColumnId === col.id && activeDragJob?.userStatus !== col.id;
 
                 return (
                   <div
                     key={col.id}
                     id={`kanban-col-${col.id}`}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      if (dragOverColumnId !== col.id) setDragOverColumnId(col.id);
-                    }}
-                    onDragLeave={(e) => {
-                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                      if (dragOverColumnId === col.id) setDragOverColumnId(null);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const jobId = e.dataTransfer.getData('text/plain') || draggedJobId;
-                      if (jobId) {
-                        updateJobStatus(jobId, col.id);
-                      }
-                      setDragOverColumnId(null);
-                      setDraggedJobId(null);
-                    }}
-                    className={`w-[85vw] max-w-[320px] sm:w-80 shrink-0 snap-center flex flex-col rounded-2xl border bg-stone-50/60 transition-all duration-150 ${
+                    data-kanban-column-id={col.id}
+                    className={`w-[85vw] max-w-[320px] sm:w-80 shrink-0 snap-center flex flex-col rounded-2xl border transition-all duration-150 ${
                       isOver
-                        ? 'border-stone-400 bg-stone-100/90 ring-2 ring-stone-300/60 shadow-md scale-[1.01]'
-                        : 'border-stone-200/70 hover:border-stone-300'
+                        ? 'border-stone-500 bg-stone-100/90 ring-2 ring-stone-400 shadow-md scale-[1.01]'
+                        : 'border-stone-200/70 bg-stone-50/60 hover:border-stone-300'
                     }`}
                   >
                   {/* Column Header */}
@@ -1376,29 +1477,29 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                       colJobs.map((job) => {
                         const isFrCv = job.recommendedCv === 'CV_FR.pdf';
                         const isNewlyScraped = job.listingStatus === 'New';
-                        const isDragging = draggedJobId === job.id;
+                        const isDragging = activeDragJob?.id === job.id;
 
                         return (
                           <div
                             key={job.id}
-                            draggable={true}
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('text/plain', job.id);
-                              e.dataTransfer.effectAllowed = 'move';
-                              setDraggedJobId(job.id);
-                            }}
-                            onDragEnd={() => {
-                              setDraggedJobId(null);
-                              setDragOverColumnId(null);
-                            }}
-                            className={`group relative rounded-xl border border-stone-200/80 bg-white p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:shadow-md hover:border-stone-300 transition cursor-grab active:cursor-grabbing space-y-2.5 select-none ${
-                              isDragging ? 'opacity-40 scale-95 border-stone-400 ring-2 ring-stone-300' : ''
+                            data-job-card={job.id}
+                            onPointerDown={(e) => handleStartDrag(e, job)}
+                            className={`group relative rounded-xl border bg-white p-3.5 transition-all duration-150 space-y-2.5 select-none ${
+                              isDragging
+                                ? 'opacity-30 border-dashed border-2 border-stone-400 bg-stone-50 scale-[0.98]'
+                                : 'border-stone-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:shadow-md hover:border-stone-300'
                             }`}
                           >
                             {/* Header: Grip Handle + Company + Minimalist Score */}
                             <div className="flex items-center justify-between gap-1.5">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                <GripVerticalIcon className="w-3.5 h-3.5 text-stone-300 group-hover:text-stone-500 shrink-0" />
+                                <div
+                                  onPointerDown={(e) => handleStartDrag(e, job)}
+                                  className="touch-none flex items-center justify-center p-1 -m-1 text-stone-300 group-hover:text-stone-500 active:text-stone-900 cursor-grab active:cursor-grabbing"
+                                  title="Drag to change phase (Desktop & Mobile Touch)"
+                                >
+                                  <GripVerticalIcon className="w-3.5 h-3.5 shrink-0" />
+                                </div>
                                 <span className="text-xs font-semibold text-stone-800 truncate">
                                   {job.companyName}
                                 </span>
@@ -2188,6 +2289,52 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                 <ExternalLinkIcon className="w-3.5 h-3.5" />
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Seamless Floating Card Drag Preview (Desktop & Mobile Touch) */}
+      {activeDragJob && dragPointerPos && (
+        <div
+          className="fixed pointer-events-none z-[9999] shadow-2xl rounded-xl border border-stone-300/90 bg-white p-3.5 select-none transition-transform duration-75"
+          style={{
+            width: dragCardDimensions?.width || 280,
+            left: dragPointerPos.x - (dragCardDimensions?.width ? dragCardDimensions.width / 2 : 140),
+            top: dragPointerPos.y - 25,
+            transform: 'rotate(2.5deg) scale(1.03)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <GripVerticalIcon className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+              <span className="text-xs font-semibold text-stone-800 truncate">
+                {activeDragJob.companyName}
+              </span>
+            </div>
+            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold border ${getScoreColorBadge(activeDragJob.overallScore)}`}>
+              {activeDragJob.overallScore}
+            </span>
+          </div>
+
+          <h4 className="text-xs font-semibold text-stone-900 leading-snug line-clamp-2 mt-1.5">
+            {activeDragJob.exactJobTitle}
+          </h4>
+
+          <div className="flex items-center gap-1.5 text-[11px] text-stone-400 mt-1">
+            <span className="truncate">{cleanLocation(activeDragJob.city, activeDragJob.region)}</span>
+            <span>·</span>
+            <span>{activeDragJob.publicationDate}</span>
+          </div>
+
+          <div className="mt-2 pt-2 border-t border-stone-100 flex items-center justify-between text-[10px] text-stone-500">
+            <span>{activeDragJob.recommendedCv === 'CV_FR.pdf' ? 'French CV' : 'English CV'}</span>
+            {dragOverColumnId && dragOverColumnId !== activeDragJob.userStatus ? (
+              <span className="font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                Move to: {KANBAN_COLUMNS.find((c) => c.id === dragOverColumnId)?.title}
+              </span>
+            ) : (
+              <span className="text-stone-400">Release over phase to move</span>
+            )}
           </div>
         </div>
       )}
