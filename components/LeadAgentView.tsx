@@ -1,12 +1,157 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { EvaluatedJob, DashboardTab } from '@/lib/lead-agent/types';
+import { EvaluatedJob, DashboardTab, UserStatus } from '@/lib/lead-agent/types';
 import { DEFAULT_GENERIC_MASTER_PROMPT } from '@/lib/lead-agent/master-prompt';
 
 interface LeadAgentViewProps {
   onBackToChat?: () => void;
   onOpenSidebar?: () => void;
+}
+
+// Professional SVG icons (Apple-inspired minimalist design — zero random emojis)
+function MapPinIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function ClockIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect width="20" height="14" x="2" y="7" rx="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+    </svg>
+  );
+}
+
+function SparklesIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+    </svg>
+  );
+}
+
+function BookmarkIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  );
+}
+
+function CalendarIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect width="18" height="18" x="3" y="4" rx="2" />
+      <line x1="16" x2="16" y1="2" y2="6" />
+      <line x1="8" x2="8" y1="2" y2="6" />
+      <line x1="3" x2="21" y1="10" y2="10" />
+    </svg>
+  );
+}
+
+function ArchiveIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect width="20" height="5" x="2" y="3" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" x2="21" y1="14" y2="3" />
+    </svg>
+  );
+}
+
+function FileTextIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="M10 9H8" />
+      <path d="M16 13H8" />
+      <path d="M16 17H8" />
+    </svg>
+  );
+}
+
+function InboxIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </svg>
+  );
+}
+
+function GripVerticalIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  );
+}
+
+function EyeIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function XIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function cleanLocation(city: string, region: string): string {
+  const c = (city || '').trim();
+  const r = (region || '').trim();
+  if (!c && !r) return 'France';
+  if (c && r && r.toLowerCase().includes(c.toLowerCase())) return r;
+  if (c && r) return `${c}, ${r}`;
+  return c || r;
 }
 
 const TAB_DISPLAY_LABELS: Record<DashboardTab, string> = {
@@ -15,10 +160,51 @@ const TAB_DISPLAY_LABELS: Record<DashboardTab, string> = {
   'AI Engineering': 'AI Engineering',
   'React / Frontend': 'React / Frontend',
   'Related Opportunities': 'Related',
-  'Saved Jobs': '★ Saved',
-  'Applied Jobs': '✓ Applied',
+  'Saved Jobs': 'Shortlisted',
+  'Applied Jobs': 'Applied',
+  'Interviewing Jobs': 'Interviewing',
   'Archived or Rejected Jobs': 'Archived',
 };
+
+interface KanbanColumnConfig {
+  id: UserStatus;
+  title: string;
+  iconType: 'inbox' | 'saved' | 'applied' | 'interviewing' | 'archived';
+  emptyHint: string;
+}
+
+const KANBAN_COLUMNS: KanbanColumnConfig[] = [
+  {
+    id: 'inbox',
+    title: 'New Leads',
+    iconType: 'inbox',
+    emptyHint: 'No leads in inbox. Run a scan to discover fresh jobs.',
+  },
+  {
+    id: 'saved',
+    title: 'Shortlisted',
+    iconType: 'saved',
+    emptyHint: 'Drag jobs here to shortlist for application.',
+  },
+  {
+    id: 'applied',
+    title: 'Applied',
+    iconType: 'applied',
+    emptyHint: 'Drag jobs here once you have submitted your CV.',
+  },
+  {
+    id: 'interviewing',
+    title: 'Interviewing',
+    iconType: 'interviewing',
+    emptyHint: 'Drag jobs here when invited to interview rounds.',
+  },
+  {
+    id: 'archived',
+    title: 'Archived',
+    iconType: 'archived',
+    emptyHint: 'Drag jobs here to archive or pass.',
+  },
+];
 
 export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProps) {
   // Tabs matching Section 10 of Master Prompt + All Jobs overview tab
@@ -57,6 +243,25 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
 
   // Collapsible drawer for advanced filters & live LinkedIn quick search
   const [showFiltersDrawer, setShowFiltersDrawer] = useState(false);
+
+  // View Mode: List Feed vs. Azure DevOps / Kanban Task Board
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('lead_agent_view_mode');
+      if (saved === 'list' || saved === 'kanban') return saved;
+    }
+    return 'list';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('lead_agent_view_mode', viewMode);
+    } catch {}
+  }, [viewMode]);
+
+  // Drag and Drop state for Azure Task Manager-style Kanban board
+  const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<UserStatus | null>(null);
 
   // Quick Search State (1-click live search across France without re-entering API key)
   const [quickSearchInput, setQuickSearchInput] = useState(() => {
@@ -393,7 +598,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     }
   };
 
-  const updateJobStatus = async (id: string, newStatus: EvaluatedJob['userStatus']) => {
+  const updateJobStatus = async (id: string, newStatus: UserStatus) => {
     setJobs((prev) =>
       prev.map((j) => (j.id === id ? { ...j, userStatus: newStatus } : j))
     );
@@ -410,16 +615,57 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
 
   // Tab membership rule:
   // - 'Applied Jobs' holds jobs marked as applied
+  // - 'Interviewing Jobs' holds jobs in interview stage
   // - 'Archived or Rejected Jobs' holds archived jobs
   // - 'Saved Jobs' holds saved jobs
-  // - 'All Jobs' and the 4 Category tabs ONLY show active (non-applied, non-archived) jobs
+  // - 'All Jobs' and the 4 Category tabs ONLY show active (non-applied, non-interviewing, non-archived) jobs
   const matchesTab = (job: EvaluatedJob, tab: DashboardTab): boolean => {
     if (tab === 'Saved Jobs') return job.userStatus === 'saved';
     if (tab === 'Applied Jobs') return job.userStatus === 'applied';
+    if (tab === 'Interviewing Jobs') return job.userStatus === 'interviewing';
     if (tab === 'Archived or Rejected Jobs') return job.userStatus === 'archived';
-    if (job.userStatus === 'applied' || job.userStatus === 'archived') return false;
+    if (job.userStatus === 'applied' || job.userStatus === 'interviewing' || job.userStatus === 'archived') return false;
     if (tab === 'All Jobs') return true;
     return job.jobCategory === tab;
+  };
+
+  // Helper for Kanban Task Board: filters jobs belonging to each column
+  const getKanbanColumnJobs = (status: UserStatus): EvaluatedJob[] => {
+    return jobs
+      .filter((job) => {
+        if (job.userStatus !== status) return false;
+        if (
+          activeTab !== 'All Jobs' &&
+          activeTab !== 'Saved Jobs' &&
+          activeTab !== 'Applied Jobs' &&
+          activeTab !== 'Interviewing Jobs' &&
+          activeTab !== 'Archived or Rejected Jobs'
+        ) {
+          if (job.jobCategory !== activeTab) return false;
+        }
+        return (
+          matchesBaseFilters(job) &&
+          matchesLanguageFilter(job, languageFilter) &&
+          matchesFreshnessFilter(job, freshnessFilter)
+        );
+      })
+      .sort((a, b) => {
+        if (sortOrder === 'new_scraped_first') {
+          const aIsNew = a.listingStatus === 'New' ? 1 : 0;
+          const bIsNew = b.listingStatus === 'New' ? 1 : 0;
+          if (aIsNew !== bIsNew) return bIsNew - aIsNew;
+        }
+
+        if (sortOrder === 'highest_score') {
+          if (b.overallScore !== a.overallScore) return b.overallScore - a.overallScore;
+        }
+
+        const aAge = parsePostedAgeMinutes(a.publicationDate);
+        const bAge = parsePostedAgeMinutes(b.publicationDate);
+        if (aAge !== bAge) return aAge - bAge;
+
+        return b.overallScore - a.overallScore;
+      });
   };
 
   // Base filters (Region, Work Arrangement, Score, Search Query) independent of Tab & Language
@@ -567,10 +813,10 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   };
 
   const getScoreColorBadge = (score: number) => {
-    if (score >= 85) return 'bg-emerald-50 text-emerald-800 border-emerald-300';
-    if (score >= 70) return 'bg-blue-50 text-blue-800 border-blue-300';
-    if (score >= 55) return 'bg-amber-50 text-amber-800 border-amber-300';
-    return 'bg-stone-100 text-stone-700 border-stone-200';
+    if (score >= 85) return 'bg-emerald-50 text-emerald-800 border-emerald-200/80';
+    if (score >= 70) return 'bg-sky-50 text-sky-800 border-sky-200/80';
+    if (score >= 55) return 'bg-amber-50 text-amber-800 border-amber-200/80';
+    return 'bg-stone-100 text-stone-600 border-stone-200/80';
   };
 
   return (
@@ -705,6 +951,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               'Related Opportunities',
               'Saved Jobs',
               'Applied Jobs',
+              'Interviewing Jobs',
               'Archived or Rejected Jobs',
             ] as DashboardTab[]
           ).map((tab) => {
@@ -770,23 +1017,23 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               onClick={() => setFreshnessFilter(freshnessFilter === 'New' ? 'All' : 'New')}
               className={`shrink-0 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition border ${
                 freshnessFilter === 'New'
-                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-2xs'
+                  ? 'bg-stone-900 text-white border-stone-900 shadow-2xs'
                   : newScrapedCount > 0
                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
                   : 'bg-[#f4f2ec] text-stone-600 border-transparent hover:bg-[#e8e4db]'
               }`}
               title="Toggle showing only newly scraped jobs from the latest scan"
             >
-              🆕 New ({newScrapedCount})
+              New ({newScrapedCount})
             </button>
 
             {/* Compact Language Segmented Control */}
-            <div className="inline-flex items-center rounded-xl bg-[#f4f2ec] p-0.5">
+            <div className="inline-flex items-center rounded-xl bg-[#f4f2ec] p-0.5 border border-[#ded9cf]/60">
               {(
                 [
                   { id: 'All', label: `All (${allLangJobsCount})` },
-                  { id: 'EN', label: `🇬🇧 EN (${enJobsCount})` },
-                  { id: 'FR', label: `🇫🇷 FR (${frJobsCount})` },
+                  { id: 'EN', label: `EN (${enJobsCount})` },
+                  { id: 'FR', label: `FR (${frJobsCount})` },
                 ] as const
               ).map((lang) => (
                 <button
@@ -805,15 +1052,52 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
             </div>
           </div>
 
-          {/* Right: Region Dropdown + Collapsible Filters & Quick Search Button */}
-          <div className="flex items-center gap-2">
+          {/* Right: View Mode Toggle (List vs Kanban Board) + Region Dropdown + Collapsible Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Azure DevOps / Kanban View Mode Switcher */}
+            <div className="inline-flex items-center rounded-xl bg-[#f4f2ec] p-0.5 border border-[#ded9cf]">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                  viewMode === 'list'
+                    ? 'bg-white text-stone-900 shadow-2xs'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+                title="Feed List View"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span>List</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode('kanban')}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                  viewMode === 'kanban'
+                    ? 'bg-white text-stone-900 shadow-2xs'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+                title="Task Manager Drag-and-Drop Board"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2.2">
+                  <rect x="3" y="4" width="5" height="16" rx="1.5" />
+                  <rect x="10" y="4" width="5" height="11" rx="1.5" />
+                  <rect x="17" y="4" width="5" height="14" rx="1.5" />
+                </svg>
+                <span>Board</span>
+              </button>
+            </div>
+
             <select
               value={regionFilter}
               onChange={(e) => setRegionFilter(e.target.value)}
-              className="max-w-[180px] sm:max-w-none rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-2.5 py-1.5 text-xs font-medium text-stone-800 focus:outline-none"
+              className="max-w-[170px] sm:max-w-none rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-2.5 py-1.5 text-xs font-medium text-stone-800 focus:outline-none"
             >
-              <option value="All France">🇫🇷 All France</option>
-              <option value="Outside Paris">🗺️ Outside Paris</option>
+              <option value="All France">All France</option>
+              <option value="Outside Paris">Outside Paris</option>
               <option value="Paris">Paris & Île-de-France</option>
               <option value="Auvergne-Rhône-Alpes">Lyon / Grenoble (ARA)</option>
               <option value="Pays de la Loire">Nantes / Laval</option>
@@ -834,7 +1118,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                   : 'border-[#ded9cf] bg-[#fdfcf9] text-stone-700 hover:bg-[#eeece5]'
               }`}
             >
-              <span>🎛️ Filters & Search</span>
+              <span>Filters</span>
               {activeAdvancedFilterCount > 0 && (
                 <span className="rounded-full bg-amber-400 px-1.5 py-0.2 text-[10px] font-bold text-stone-950">
                   {activeAdvancedFilterCount}
@@ -914,9 +1198,9 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                     }
                     className="rounded-xl border border-[#ded9cf] bg-white px-2.5 py-1 text-xs font-medium text-stone-800 focus:outline-none"
                   >
-                    <option value="newest_posted">🕒 Lowest Hour First (Newest)</option>
-                    <option value="new_scraped_first">🆕 Newly Scraped Batch First</option>
-                    <option value="highest_score">🏆 Highest Match Score First</option>
+                    <option value="newest_posted">Newest Published</option>
+                    <option value="new_scraped_first">Newly Discovered First</option>
+                    <option value="highest_score">Highest Match Score</option>
                   </select>
                 </div>
 
@@ -926,7 +1210,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                   {(
                     [
                       { id: 'All', label: `All (${newScrapedCount + oldScrapedCount})` },
-                      { id: 'New', label: `🆕 New (${newScrapedCount})` },
+                      { id: 'New', label: `New (${newScrapedCount})` },
                       { id: 'Previously Seen', label: `Seen (${oldScrapedCount})` },
                     ] as const
                   ).map((st) => (
@@ -996,237 +1280,447 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
         )}
       </div>
 
-      {/* Main Jobs Feed */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-3">
-        {loadingJobs || (isScanningFrance && jobs.length === 0) ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center space-y-3 px-4">
-            <div className="h-8 w-8 rounded-full border-2 border-stone-800 border-t-transparent animate-spin" />
-            <p className="text-sm font-semibold text-stone-800">
-              Discovering & evaluating live jobs across France...
-            </p>
-            <p className="text-xs text-stone-500 max-w-md">
-              Querying public France job listings for AI Engineering, React/Frontend, and Full-Stack roles, deduplicating, and scoring against your profile.
-            </p>
+      {/* Main Jobs Area: Responsive Feed vs. Azure DevOps / Kanban Task Board */}
+      {loadingJobs || (isScanningFrance && jobs.length === 0) ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center space-y-3 px-4 flex-1">
+          <div className="h-8 w-8 rounded-full border-2 border-stone-800 border-t-transparent animate-spin" />
+          <p className="text-sm font-semibold text-stone-800">
+            Discovering & evaluating live jobs across France...
+          </p>
+          <p className="text-xs text-stone-500 max-w-md">
+            Querying public France job listings for AI Engineering, React/Frontend, and Full-Stack roles, deduplicating, and scoring against your profile.
+          </p>
+        </div>
+      ) : viewMode === 'kanban' ? (
+        /* Azure DevOps / Task Manager-style Kanban Board with HTML5 Drag-and-Drop & Mobile Snapping */
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Mobile-Only Quick Column Switcher */}
+          <div className="flex sm:hidden items-center gap-1.5 overflow-x-auto px-3 py-2 bg-[#f7f5f0] border-b border-[#ded9cf] scrollbar-none shrink-0">
+            {KANBAN_COLUMNS.map((col) => {
+              const colJobs = getKanbanColumnJobs(col.id);
+              return (
+                <button
+                  key={col.id}
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById(`kanban-col-${col.id}`);
+                    el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white text-stone-700 border border-stone-200/80 shadow-2xs active:bg-stone-100"
+                >
+                  <span>{col.title}</span>
+                  <span className="rounded-full px-1.5 py-0.2 text-[10px] bg-stone-100 text-stone-600 font-semibold">
+                    {colJobs.length}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        ) : filteredJobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center space-y-2.5 px-4">
-            <div className="h-10 w-10 rounded-full bg-stone-100 flex items-center justify-center text-stone-400">
-              🔍
-            </div>
-            <p className="text-sm font-semibold text-stone-700">No jobs in this view match your current filters</p>
-            <p className="text-xs text-stone-400 max-w-sm">
-              Try resetting your filters or switching tabs above to see all available France roles.
-            </p>
-            <button
-              type="button"
-              onClick={resetAllFilters}
-              className="mt-1 rounded-xl border border-[#ded9cf] bg-white px-3.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-[#eeece5]"
-            >
-              Reset Filters
-            </button>
-          </div>
-        ) : (
-          filteredJobs.map((job) => {
-            const isFrCv = job.recommendedCv === 'CV_FR.pdf';
-            const displayCvName = isFrCv ? cvFrName : cvEnName;
-            const isNewlyScraped = job.listingStatus === 'New';
-            const ageMinutes = parsePostedAgeMinutes(job.publicationDate);
-            const isUnder24h = ageMinutes < 1440;
 
-            return (
-              <div
-                key={job.id}
-                className={`group rounded-2xl border bg-white p-4 sm:p-5 shadow-2xs transition hover:shadow-sm space-y-3 ${
-                  isNewlyScraped
-                    ? 'border-[#ded9cf] border-l-4 border-l-emerald-500 hover:border-[#cfc9be]'
-                    : 'border-[#ded9cf] hover:border-[#cfc9be]'
-                }`}
+          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-3 sm:px-6 py-4 snap-x snap-mandatory scroll-smooth">
+            <div className="flex gap-3 sm:gap-4 h-full min-w-max pb-2">
+              {KANBAN_COLUMNS.map((col) => {
+                const colJobs = getKanbanColumnJobs(col.id);
+                const isOver = dragOverColumnId === col.id;
+
+                return (
+                  <div
+                    key={col.id}
+                    id={`kanban-col-${col.id}`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (dragOverColumnId !== col.id) setDragOverColumnId(col.id);
+                    }}
+                    onDragLeave={(e) => {
+                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                      if (dragOverColumnId === col.id) setDragOverColumnId(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const jobId = e.dataTransfer.getData('text/plain') || draggedJobId;
+                      if (jobId) {
+                        updateJobStatus(jobId, col.id);
+                      }
+                      setDragOverColumnId(null);
+                      setDraggedJobId(null);
+                    }}
+                    className={`w-[85vw] max-w-[320px] sm:w-80 shrink-0 snap-center flex flex-col rounded-2xl border bg-stone-50/60 transition-all duration-150 ${
+                      isOver
+                        ? 'border-stone-400 bg-stone-100/90 ring-2 ring-stone-300/60 shadow-md scale-[1.01]'
+                        : 'border-stone-200/70 hover:border-stone-300'
+                    }`}
+                  >
+                  {/* Column Header */}
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200/70 bg-white/70 rounded-t-2xl">
+                    <div className="flex items-center gap-2">
+                      {col.iconType === 'inbox' && <InboxIcon className="w-4 h-4 text-stone-500" />}
+                      {col.iconType === 'saved' && <BookmarkIcon className="w-4 h-4 text-stone-500" />}
+                      {col.iconType === 'applied' && <CheckCircleIcon className="w-4 h-4 text-stone-500" />}
+                      {col.iconType === 'interviewing' && <CalendarIcon className="w-4 h-4 text-stone-500" />}
+                      {col.iconType === 'archived' && <ArchiveIcon className="w-4 h-4 text-stone-500" />}
+                      <span className="text-xs font-semibold text-stone-800 tracking-tight">{col.title}</span>
+                    </div>
+                    <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold bg-stone-200/60 text-stone-600">
+                      {colJobs.length}
+                    </span>
+                  </div>
+
+                  {/* Column Cards Container (Vertical Scroll) */}
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-[140px]">
+                    {colJobs.length === 0 ? (
+                      <div className="h-full min-h-[120px] rounded-xl border border-dashed border-stone-200 flex flex-col items-center justify-center p-4 text-center text-stone-400">
+                        <p className="text-[11px] font-medium leading-relaxed">{col.emptyHint}</p>
+                      </div>
+                    ) : (
+                      colJobs.map((job) => {
+                        const isFrCv = job.recommendedCv === 'CV_FR.pdf';
+                        const isNewlyScraped = job.listingStatus === 'New';
+                        const isDragging = draggedJobId === job.id;
+
+                        return (
+                          <div
+                            key={job.id}
+                            draggable={true}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', job.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                              setDraggedJobId(job.id);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedJobId(null);
+                              setDragOverColumnId(null);
+                            }}
+                            className={`group relative rounded-xl border border-stone-200/80 bg-white p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:shadow-md hover:border-stone-300 transition cursor-grab active:cursor-grabbing space-y-2.5 select-none ${
+                              isDragging ? 'opacity-40 scale-95 border-stone-400 ring-2 ring-stone-300' : ''
+                            }`}
+                          >
+                            {/* Header: Grip Handle + Company + Minimalist Score */}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <GripVerticalIcon className="w-3.5 h-3.5 text-stone-300 group-hover:text-stone-500 shrink-0" />
+                                <span className="text-xs font-semibold text-stone-800 truncate">
+                                  {job.companyName}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedJobDetails(job);
+                                }}
+                                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold border ${getScoreColorBadge(job.overallScore)}`}
+                                title="Click to view 100-pt breakdown"
+                              >
+                                {job.overallScore}
+                              </button>
+                            </div>
+
+                            {/* Title */}
+                            <h4
+                              onClick={() => setSelectedJobDetails(job)}
+                              className="text-xs font-semibold text-stone-900 leading-snug line-clamp-2 hover:text-stone-600 transition cursor-pointer"
+                            >
+                              {job.exactJobTitle}
+                            </h4>
+
+                            {/* Location & Time */}
+                            <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                              <span className="truncate">{cleanLocation(job.city, job.region)}</span>
+                              <span>·</span>
+                              <span className="shrink-0">{job.publicationDate}</span>
+                              {isNewlyScraped && (
+                                <span className="rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-1 py-0.2 text-[9px] font-medium">
+                                  New
+                                </span>
+                              )}
+                            </div>
+
+                            {/* CV Recommendation Pill + Actions */}
+                            <div className="flex items-center justify-between gap-1 pt-2 border-t border-stone-100">
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] text-stone-500 font-medium"
+                                title={job.cvRecommendationReason}
+                              >
+                                <FileTextIcon className="w-3 h-3 text-stone-400" />
+                                <span>{isFrCv ? 'French CV' : 'English CV'}</span>
+                              </span>
+
+                              {/* Actions & 1-Click Status Dropdown (Touch-friendly) */}
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedJobDetails(job);
+                                  }}
+                                  className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition"
+                                  title="View full details"
+                                >
+                                  <EyeIcon className="w-3.5 h-3.5" />
+                                </button>
+
+                                <a
+                                  href={job.directApplicationUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition"
+                                  title="Open LinkedIn application"
+                                >
+                                  <ExternalLinkIcon className="w-3.5 h-3.5" />
+                                </a>
+
+                                <select
+                                  value={job.userStatus}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    updateJobStatus(job.id, e.target.value as UserStatus);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="rounded text-[10px] bg-stone-50 border border-stone-200 text-stone-600 py-0.5 px-1 focus:outline-none cursor-pointer"
+                                  title="Move stage"
+                                >
+                                  <option value="inbox">Inbox</option>
+                                  <option value="saved">Shortlist</option>
+                                  <option value="applied">Applied</option>
+                                  <option value="interviewing">Interview</option>
+                                  <option value="archived">Archive</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    ) : (
+        /* High-Clarity Apple-Style List Feed */
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-4">
+          {filteredJobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-2.5 px-4">
+              <div className="h-10 w-10 rounded-full bg-stone-100 flex items-center justify-center text-stone-400">
+                <EyeIcon className="w-5 h-5" />
+              </div>
+              <p className="text-sm font-semibold text-stone-700">No jobs in this view match your current filters</p>
+              <p className="text-xs text-stone-400 max-w-sm">
+                Try resetting your filters or switching tabs above to see all available France roles.
+              </p>
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="mt-1 rounded-xl border border-stone-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition"
               >
-                {/* Card Top: Meta pills + Job Title & Company on Left, Score Badge on Right */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    {/* Compact Status & Freshness Row */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {isNewlyScraped ? (
-                        <span className="inline-flex items-center rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                          🆕 New
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
-                          Seen
-                        </span>
-                      )}
+                Reset Filters
+              </button>
+            </div>
+          ) : (
+            filteredJobs.map((job) => {
+              const isFrCv = job.recommendedCv === 'CV_FR.pdf';
+              const displayCvName = isFrCv ? cvFrName : cvEnName;
+              const isNewlyScraped = job.listingStatus === 'New';
 
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                          isUnder24h
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            : 'bg-stone-100 text-stone-700'
-                        }`}
+              return (
+                <div
+                  key={job.id}
+                  className="group rounded-2xl border border-stone-200/80 bg-white p-4 sm:p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] hover:border-stone-300 transition-all duration-150 space-y-3.5 sm:space-y-4"
+                >
+                  {/* Card Top: Metadata on Left, Apple-Style Score Badge on Right */}
+                  <div className="flex items-start justify-between gap-3 sm:gap-4">
+                    <div className="min-w-0 flex-1 space-y-1 sm:space-y-1.5">
+                      {/* Clean Company, Location & Contract Pill Row */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                        <span className="font-semibold text-stone-900 text-sm tracking-tight">{job.companyName}</span>
+                        <span className="text-stone-300">·</span>
+                        <span className="inline-flex items-center gap-1 text-stone-500 font-medium">
+                          <MapPinIcon className="w-3.5 h-3.5 text-stone-400" />
+                          <span>{cleanLocation(job.city, job.region)}</span>
+                        </span>
+                        <span className="text-stone-300">·</span>
+                        <span className="rounded-md bg-stone-100/90 px-2 py-0.5 text-[11px] font-medium text-stone-600">
+                          {job.employmentType} · {job.workingArrangement}
+                        </span>
+                        <span className="text-stone-300">·</span>
+                        <span className="inline-flex items-center gap-1 text-stone-400 text-[11px]">
+                          <ClockIcon className="w-3.5 h-3.5 text-stone-400" />
+                          <span>{job.publicationDate}</span>
+                        </span>
+                        {isNewlyScraped && (
+                          <span className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-2 py-0.5 text-[10px] font-medium">
+                            New
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Prominent, Clean Job Title */}
+                      <h3
+                        onClick={() => setSelectedJobDetails(job)}
+                        className="text-base sm:text-lg font-semibold tracking-tight text-stone-900 group-hover:text-stone-700 transition cursor-pointer leading-snug break-words"
                       >
-                        🕒 {job.publicationDate}
-                      </span>
+                        {job.exactJobTitle}
+                      </h3>
+                    </div>
 
-                      <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-700">
-                        {job.workingArrangement}
+                    {/* Right: Apple-Style Match Score Badge */}
+                    <div
+                      onClick={() => setSelectedJobDetails(job)}
+                      className="shrink-0 flex flex-col items-end cursor-pointer group-hover:opacity-90 transition pl-1 sm:pl-2"
+                      title="Inspect score breakdown"
+                    >
+                      <div className="flex items-baseline gap-0.5">
+                        <span className="text-xl sm:text-2xl font-bold tracking-tight text-stone-900 leading-none">
+                          {job.overallScore}
+                        </span>
+                        <span className="text-xs font-normal text-stone-400">/100</span>
+                      </div>
+                      <span className={`text-[10px] font-semibold tracking-wider uppercase mt-1 px-2 py-0.5 rounded-full border ${getScoreColorBadge(job.overallScore)}`}>
+                        {job.matchCategory}
                       </span>
+                    </div>
+                  </div>
 
-                      <span className="hidden sm:inline-flex rounded-md bg-amber-50 border border-amber-200/70 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                  {/* Card Middle: Clean AI Summary Box */}
+                  <div className="rounded-xl border border-stone-200/60 bg-stone-50/70 p-3 sm:p-3.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-stone-700">
+                        <SparklesIcon className="w-3.5 h-3.5 text-stone-400" />
+                        <span>Match Insight</span>
+                      </div>
+                      <span className="text-[10px] font-medium text-stone-500 bg-stone-200/50 rounded-md px-2 py-0.5">
                         {TAB_DISPLAY_LABELS[job.jobCategory] || job.jobCategory}
                       </span>
                     </div>
 
-                    {/* Title & Company + Location */}
-                    <h2 className="text-sm sm:text-base font-bold text-stone-900 leading-snug">
-                      {job.exactJobTitle}
-                    </h2>
+                    <p className="text-xs leading-relaxed text-stone-600">{job.geminiSummary}</p>
 
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone-600">
-                      <span className="font-semibold text-stone-800">{job.companyName}</span>
-                      <span className="text-stone-300">•</span>
-                      <span>📍 {job.city}, {job.region}</span>
-                      <span className="text-stone-300">•</span>
-                      <span className="text-stone-500">{job.employmentType} ({job.seniorityLevel})</span>
+                    {/* Skill Chips */}
+                    {job.strongestMatchingSkills && job.strongestMatchingSkills.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-stone-200/40">
+                        {job.strongestMatchingSkills.slice(0, 4).map((skill) => (
+                          <span
+                            key={skill}
+                            className="rounded-md bg-white border border-stone-200/80 px-2.5 py-0.5 text-[11px] font-medium text-stone-600 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Footer: CV Pill on Left, Clean Action Group on Right */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 pt-1 border-t border-stone-100">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200/80 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] max-w-full overflow-hidden"
+                        title={job.cvRecommendationReason}
+                      >
+                        <FileTextIcon className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                        <span className="shrink-0">Recommended:</span>
+                        <span className="font-semibold text-stone-900 shrink-0">{isFrCv ? 'French CV' : 'English CV'}</span>
+                        <span className="text-[10px] text-stone-400 font-mono truncate hidden xs:inline max-w-[130px]">({displayCvName})</span>
+                      </span>
+                    </div>
+
+                    {/* Professional Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedJobDetails(job)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200/80 bg-white px-2.5 sm:px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50 transition shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                      >
+                        <FileTextIcon className="w-3.5 h-3.5 text-stone-400" />
+                        <span>Details</span>
+                      </button>
+
+                      {/* Stage Selector / Action Pills */}
+                      <div className="inline-flex items-center rounded-xl bg-stone-100 p-0.5 border border-stone-200/70 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => updateJobStatus(job.id, job.userStatus === 'saved' ? 'inbox' : 'saved')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium transition ${
+                            job.userStatus === 'saved'
+                              ? 'bg-white text-stone-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.06)]'
+                              : 'text-stone-600 hover:text-stone-900'
+                          }`}
+                          title="Shortlist/Save this role"
+                        >
+                          <BookmarkIcon className={`w-3.5 h-3.5 ${job.userStatus === 'saved' ? 'text-amber-500 fill-amber-500' : 'text-stone-400'}`} />
+                          <span>Shortlist</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateJobStatus(job.id, job.userStatus === 'applied' ? 'inbox' : 'applied')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium transition ${
+                            job.userStatus === 'applied'
+                              ? 'bg-white text-stone-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.06)]'
+                              : 'text-stone-600 hover:text-stone-900'
+                          }`}
+                          title="Mark as Applied"
+                        >
+                          <CheckCircleIcon className={`w-3.5 h-3.5 ${job.userStatus === 'applied' ? 'text-emerald-600' : 'text-stone-400'}`} />
+                          <span>Applied</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateJobStatus(job.id, job.userStatus === 'interviewing' ? 'inbox' : 'interviewing')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium transition ${
+                            job.userStatus === 'interviewing'
+                              ? 'bg-white text-stone-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.06)]'
+                              : 'text-stone-600 hover:text-stone-900'
+                          }`}
+                          title="Mark as Interviewing"
+                        >
+                          <CalendarIcon className={`w-3.5 h-3.5 ${job.userStatus === 'interviewing' ? 'text-purple-600' : 'text-stone-400'}`} />
+                          <span>Interview</span>
+                        </button>
+                      </div>
+
+                      {job.userStatus !== 'archived' ? (
+                        <button
+                          type="button"
+                          onClick={() => updateJobStatus(job.id, 'archived')}
+                          className="rounded-xl border border-stone-200/80 bg-white p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition"
+                          title="Archive"
+                        >
+                          <ArchiveIcon className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => updateJobStatus(job.id, 'inbox')}
+                          className="rounded-xl border border-stone-200/80 bg-white px-2.5 py-1.5 text-xs text-stone-500 hover:text-stone-900 transition"
+                        >
+                          Restore
+                        </button>
+                      )}
+
+                      <a
+                        href={job.directApplicationUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-3 sm:px-3.5 py-1.5 text-xs font-medium text-white hover:bg-stone-800 transition shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                      >
+                        <span>Apply</span>
+                        <ExternalLinkIcon className="w-3.5 h-3.5" />
+                      </a>
                     </div>
                   </div>
-
-                  {/* Right: Match Score Badge */}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedJobDetails(job)}
-                    title="Click to inspect full 100-point breakdown & 3 key points to emphasize"
-                    className={`shrink-0 flex flex-col items-end rounded-xl border px-2.5 sm:px-3 py-1.5 text-right transition hover:opacity-90 ${getScoreColorBadge(
-                      job.overallScore
-                    )}`}
-                  >
-                    <span className="text-xs sm:text-sm font-bold leading-tight">
-                      {job.overallScore} / 100
-                    </span>
-                    <span className="text-[9px] sm:text-[10px] font-semibold tracking-wide uppercase">
-                      {job.matchCategory}
-                    </span>
-                  </button>
                 </div>
-
-                {/* Card Middle: Clean, Uncluttered AI Evaluation Summary */}
-                <div className="rounded-xl border border-stone-200/80 bg-[#fdfcf9] px-3 py-2.5 text-xs leading-relaxed">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="font-semibold text-stone-700 text-[11px] flex items-center gap-1">
-                      <span className="text-amber-600">✨</span> Why it matches
-                    </span>
-                    <span
-                      className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                        job.scoredBy === 'gemini'
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          : 'bg-stone-100 text-stone-500'
-                      }`}
-                    >
-                      {job.scoredBy === 'gemini' ? '✨ Gemini AI' : '⚙️ Keyword Formula'}
-                    </span>
-                  </div>
-                  <p className="text-stone-700 line-clamp-2 sm:line-clamp-none">{job.geminiSummary}</p>
-                </div>
-
-                {/* Card Footer: CV Pill + Top 3 Skills on Left, Responsive Action Buttons on Right */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-0.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold border ${
-                        isFrCv
-                          ? 'bg-blue-50 text-blue-800 border-blue-200'
-                          : 'bg-purple-50 text-purple-800 border-purple-200'
-                      }`}
-                      title={job.cvRecommendationReason}
-                    >
-                      {isFrCv ? `🇫🇷 ${displayCvName}` : `🇬🇧 ${displayCvName}`}
-                    </span>
-
-                    {job.strongestMatchingSkills.slice(0, 3).map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600"
-                      >
-                        ✓ {skill}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Action Buttons (Mobile-friendly wrap) */}
-                  <div className="flex flex-wrap items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedJobDetails(job)}
-                      className="rounded-xl border border-[#ded9cf] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-[#eeece5]"
-                    >
-                      Details
-                    </button>
-
-                    {job.userStatus !== 'saved' ? (
-                      <button
-                        type="button"
-                        onClick={() => updateJobStatus(job.id, 'saved')}
-                        className="rounded-xl border border-[#ded9cf] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-[#eeece5]"
-                      >
-                        ★ Save
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => updateJobStatus(job.id, 'inbox')}
-                        className="rounded-xl bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1.5 text-xs font-semibold"
-                      >
-                        ★ Saved
-                      </button>
-                    )}
-
-                    {job.userStatus !== 'applied' ? (
-                      <button
-                        type="button"
-                        onClick={() => updateJobStatus(job.id, 'applied')}
-                        className="rounded-xl border border-[#ded9cf] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300"
-                      >
-                        ✓ Applied
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => updateJobStatus(job.id, 'inbox')}
-                        title="Click to move back to Inbox"
-                        className="rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-emerald-200 transition"
-                      >
-                        ✓ Applied (Undo)
-                      </button>
-                    )}
-
-                    {job.userStatus !== 'archived' && (
-                      <button
-                        type="button"
-                        onClick={() => updateJobStatus(job.id, 'archived')}
-                        className="rounded-xl border border-[#ded9cf] bg-white px-2 py-1.5 text-xs text-stone-400 hover:text-stone-700 hover:bg-stone-100"
-                        title="Archive or Reject"
-                      >
-                        ✕
-                      </button>
-                    )}
-
-                    <a
-                      href={job.directApplicationUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-stone-800 transition active:scale-95"
-                    >
-                      <span>Apply</span>
-                      <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" stroke="currentColor" strokeWidth="2.5">
-                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
-                      </svg>
-                    </a>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {/* PROFILE, MASTER PROMPT & API KEY CLOUD SETTINGS MODAL */}
       {showProfileModal && (
@@ -1540,15 +2034,21 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
             <div className="flex items-start justify-between gap-3 border-b border-stone-200 pb-3">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                  <span className="rounded-md bg-stone-100 border border-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-700">
                     {selectedJobDetails.jobCategory}
                   </span>
-                  <span className="text-xs text-stone-400">•</span>
-                  <span className="text-xs text-stone-500">🕒 {selectedJobDetails.publicationDate}</span>
+                  <span className="text-xs text-stone-300">·</span>
+                  <span className="text-xs text-stone-500 inline-flex items-center gap-1">
+                    <ClockIcon className="w-3.5 h-3.5 text-stone-400" />
+                    <span>{selectedJobDetails.publicationDate}</span>
+                  </span>
                 </div>
                 <h3 className="text-base font-bold text-stone-900">{selectedJobDetails.exactJobTitle}</h3>
-                <p className="text-xs text-stone-500">
-                  {selectedJobDetails.companyName} • 📍 {selectedJobDetails.city}, {selectedJobDetails.region} ({selectedJobDetails.workingArrangement})
+                <p className="text-xs text-stone-500 inline-flex items-center gap-1 mt-0.5">
+                  <span className="font-semibold text-stone-800">{selectedJobDetails.companyName}</span>
+                  <span className="text-stone-300">·</span>
+                  <MapPinIcon className="w-3.5 h-3.5 text-stone-400" />
+                  <span>{cleanLocation(selectedJobDetails.city, selectedJobDetails.region)} ({selectedJobDetails.workingArrangement})</span>
                 </p>
               </div>
               <button
@@ -1556,16 +2056,19 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                 onClick={() => setSelectedJobDetails(null)}
                 className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100"
               >
-                ✕
+                <XIcon className="w-4 h-4" />
               </button>
             </div>
 
             {/* Full Summary & 3 Key Points to Emphasize */}
             <div className="rounded-xl border border-stone-200 bg-[#fdfcf9] p-3.5 text-xs space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-stone-800">✨ Evaluation Summary</span>
-                <span className="text-[11px] font-medium text-emerald-700">
-                  {selectedJobDetails.scoredBy === 'gemini' ? '✨ Scored by Gemini AI' : '⚙️ Keyword Formula'}
+                <span className="font-semibold text-stone-800 inline-flex items-center gap-1.5">
+                  <SparklesIcon className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Evaluation Summary</span>
+                </span>
+                <span className="text-[11px] font-medium text-stone-500">
+                  {selectedJobDetails.scoredBy === 'gemini' ? 'Gemini AI' : 'Rubric'}
                 </span>
               </div>
               <p className="text-stone-700 leading-relaxed">{selectedJobDetails.geminiSummary}</p>
@@ -1632,19 +2135,57 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               </div>
             )}
 
+            {/* Application Stage Selector in Modal */}
+            <div className="rounded-xl bg-stone-50 border border-stone-200/80 p-3 space-y-2">
+              <span className="text-xs font-semibold text-stone-700">Application Stage:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { id: 'inbox', label: 'Inbox', icon: <InboxIcon className="w-3.5 h-3.5" /> },
+                    { id: 'saved', label: 'Shortlisted', icon: <BookmarkIcon className="w-3.5 h-3.5" /> },
+                    { id: 'applied', label: 'Applied', icon: <CheckCircleIcon className="w-3.5 h-3.5" /> },
+                    { id: 'interviewing', label: 'Interviewing', icon: <CalendarIcon className="w-3.5 h-3.5" /> },
+                    { id: 'archived', label: 'Archived', icon: <ArchiveIcon className="w-3.5 h-3.5" /> },
+                  ] as const
+                ).map((st) => {
+                  const isCurrent = selectedJobDetails.userStatus === st.id;
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => {
+                        updateJobStatus(selectedJobDetails.id, st.id as UserStatus);
+                        setSelectedJobDetails({ ...selectedJobDetails, userStatus: st.id as UserStatus });
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition border ${
+                        isCurrent
+                          ? 'bg-stone-900 text-white font-semibold border-stone-900 shadow-xs'
+                          : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                      }`}
+                    >
+                      {st.icon}
+                      <span>{st.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-200 pt-3">
-              <div className="text-xs text-stone-600">
-                <span>Recommended CV: </span>
+              <div className="text-xs text-stone-600 inline-flex items-center gap-1.5">
+                <FileTextIcon className="w-3.5 h-3.5 text-stone-400" />
+                <span>Recommended: </span>
                 <strong className="text-stone-900">{selectedJobDetails.recommendedCv}</strong>
-                <span className="block text-[11px] text-stone-400">{selectedJobDetails.cvRecommendationReason}</span>
+                <span className="text-[11px] text-stone-400 ml-1">({selectedJobDetails.cvRecommendationReason})</span>
               </div>
               <a
                 href={selectedJobDetails.directApplicationUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-semibold text-white hover:bg-stone-800"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 shadow-xs transition"
               >
-                Open Official Job Page ↗
+                <span>Open Official Job Page</span>
+                <ExternalLinkIcon className="w-3.5 h-3.5" />
               </a>
             </div>
           </div>

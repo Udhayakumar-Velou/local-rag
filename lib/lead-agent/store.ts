@@ -28,7 +28,7 @@ function getSupabaseServerClient() {
  */
 function pruneStaleInboxJobs(jobs: EvaluatedJob[]): EvaluatedJob[] {
   return jobs.filter((job) => {
-    if (job.userStatus === 'saved' || job.userStatus === 'applied') {
+    if (job.userStatus === 'saved' || job.userStatus === 'applied' || job.userStatus === 'interviewing') {
       return true;
     }
     return isWithinFourDaysMax('', job.publicationDate);

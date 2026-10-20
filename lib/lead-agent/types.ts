@@ -12,7 +12,10 @@ export type DashboardTab =
   | 'Related Opportunities'
   | 'Saved Jobs'
   | 'Applied Jobs'
+  | 'Interviewing Jobs'
   | 'Archived or Rejected Jobs';
+
+export type UserStatus = 'inbox' | 'saved' | 'applied' | 'interviewing' | 'archived';
 
 export type MatchCategory =
   | 'Excellent match'
@@ -67,7 +70,7 @@ export interface EvaluatedJob {
   directApplicationUrl: string;
   sourceUrl: string;
   listingStatus: 'New' | 'Previously Seen' | 'Updated' | 'Unverified';
-  userStatus: 'inbox' | 'saved' | 'applied' | 'archived';
+  userStatus: UserStatus;
   scoredBy?: 'gemini' | 'heuristic';
   appliedAt?: string;
   notes?: string;

@@ -1,6 +1,16 @@
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = class DummyWebSocket {
+    constructor() {}
+    addEventListener() {}
+    removeEventListener() {}
+    send() {}
+    close() {}
+  };
+}
+
 const env = fs.readFileSync('.env.local', 'utf8');
 const urlMatch = env.match(/^NEXT_PUBLIC_SUPABASE_URL=(.+)$/m);
 const keyMatch = env.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.+)$/m);
