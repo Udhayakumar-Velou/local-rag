@@ -208,64 +208,21 @@ const KANBAN_COLUMNS: KanbanColumnConfig[] = [
 
 export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProps) {
   // Tabs matching Section 10 of Master Prompt + All Jobs overview tab
-  const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('lead_agent_tab');
-      if (saved) return saved as DashboardTab;
-    }
-    return 'All Jobs';
-  });
-
-  const [jobs, setJobs] = useState<EvaluatedJob[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('lead_agent_cached_jobs');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
-    }
-    return [];
-  });
-
-  const [loadingJobs, setLoadingJobs] = useState(jobs.length === 0);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('All Jobs');
+  const [jobs, setJobs] = useState<EvaluatedJob[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(true);
   const [isScanningFrance, setIsScanningFrance] = useState(false);
-  const [lastScanAt, setLastScanAt] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return localStorage.getItem('lead_agent_cached_last_scan') || null;
-      } catch {}
-    }
-    return null;
-  });
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [scanBanner, setScanBanner] = useState<string | null>(null);
 
   // Collapsible drawer for advanced filters & live LinkedIn quick search
   const [showFiltersDrawer, setShowFiltersDrawer] = useState(false);
 
   // View Mode: List Feed vs. Azure DevOps / Kanban Task Board
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('lead_agent_view_mode');
-      if (saved === 'list' || saved === 'kanban') return saved;
-    }
-    return 'list';
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('lead_agent_view_mode', viewMode);
-    } catch {}
-  }, [viewMode]);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
 
   // Quick Search State (1-click live search across France without re-entering API key)
-  const [quickSearchInput, setQuickSearchInput] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('lead_agent_quick_search') || '';
-    }
-    return '';
-  });
+  const [quickSearchInput, setQuickSearchInput] = useState('');
 
   // Private Settings State (Loaded from Supabase Cloud / gitignored store — zero personal info in Git code)
   const [candidateName, setCandidateName] = useState('');
@@ -282,85 +239,113 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const [settingsSavedMsg, setSettingsSavedMsg] = useState('');
 
   // Local UI Filters (persisted in localStorage so user searches are retained across logins and refreshes)
-  const [searchQuery, setSearchQuery] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('lead_agent_search') || '';
-    }
-    return '';
-  });
-  const [regionFilter, setRegionFilter] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('lead_agent_region') || 'All France';
-    }
-    return 'All France';
-  });
-  const [arrangementFilter, setArrangementFilter] = useState<'All' | 'Remote' | 'Hybrid' | 'On-site'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('lead_agent_arrangement') as any) || 'All';
-    }
-    return 'All';
-  });
-  const [scoreFilter, setScoreFilter] = useState<'All' | '85+' | '70-84' | '55-69'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('lead_agent_score') as any) || 'All';
-    }
-    return 'All';
-  });
-  const [languageFilter, setLanguageFilter] = useState<'All' | 'EN' | 'FR'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('lead_agent_lang') as any) || 'All';
-    }
-    return 'All';
-  });
-  const [freshnessFilter, setFreshnessFilter] = useState<'All' | 'New' | 'Previously Seen'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('lead_agent_freshness') as any) || 'All';
-    }
-    return 'All';
-  });
-  const [sortOrder, setSortOrder] = useState<'newest_posted' | 'new_scraped_first' | 'highest_score'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('lead_agent_sort') as any) || 'newest_posted';
-    }
-    return 'newest_posted';
-  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [regionFilter, setRegionFilter] = useState('All France');
+  const [arrangementFilter, setArrangementFilter] = useState<'All' | 'Remote' | 'Hybrid' | 'On-site'>('All');
+  const [scoreFilter, setScoreFilter] = useState<'All' | '85+' | '70-84' | '55-69'>('All');
+  const [languageFilter, setLanguageFilter] = useState<'All' | 'EN' | 'FR'>('All');
+  const [freshnessFilter, setFreshnessFilter] = useState<'All' | 'New' | 'Previously Seen'>('All');
+  const [sortOrder, setSortOrder] = useState<'newest_posted' | 'new_scraped_first' | 'highest_score'>('newest_posted');
+  const [isClientMounted, setIsClientMounted] = useState(false);
 
-  // Keep filters synced to localStorage
+  // Hydrate filters & cached state safely on client mount (prevents SSR hydration mismatch)
   useEffect(() => {
+    setIsClientMounted(true);
+    try {
+      const savedTab = localStorage.getItem('lead_agent_tab');
+      if (savedTab) setActiveTab(savedTab as DashboardTab);
+
+      const savedMode = localStorage.getItem('lead_agent_view_mode');
+      if (savedMode === 'list' || savedMode === 'kanban') setViewMode(savedMode);
+
+      const cachedJobs = localStorage.getItem('lead_agent_cached_jobs');
+      if (cachedJobs) {
+        const parsed = JSON.parse(cachedJobs);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setJobs(parsed);
+          setLoadingJobs(false);
+        }
+      }
+
+      const cachedScan = localStorage.getItem('lead_agent_cached_last_scan');
+      if (cachedScan) setLastScanAt(cachedScan);
+
+      const savedQuick = localStorage.getItem('lead_agent_quick_search');
+      if (savedQuick) setQuickSearchInput(savedQuick);
+
+      const savedSearch = localStorage.getItem('lead_agent_search');
+      if (savedSearch) setSearchQuery(savedSearch);
+
+      const savedRegion = localStorage.getItem('lead_agent_region');
+      if (savedRegion) setRegionFilter(savedRegion);
+
+      const savedArr = localStorage.getItem('lead_agent_arrangement');
+      if (savedArr) setArrangementFilter(savedArr as any);
+
+      const savedScore = localStorage.getItem('lead_agent_score');
+      if (savedScore) setScoreFilter(savedScore as any);
+
+      const savedLang = localStorage.getItem('lead_agent_lang');
+      if (savedLang) setLanguageFilter(savedLang as any);
+
+      const savedFresh = localStorage.getItem('lead_agent_freshness');
+      if (savedFresh) setFreshnessFilter(savedFresh as any);
+
+      const savedSort = localStorage.getItem('lead_agent_sort');
+      if (savedSort) setSortOrder(savedSort as any);
+    } catch {}
+  }, []);
+
+  // Keep filters synced to localStorage once mounted
+  useEffect(() => {
+    if (!isClientMounted) return;
+    try { localStorage.setItem('lead_agent_view_mode', viewMode); } catch {}
+  }, [viewMode, isClientMounted]);
+
+  useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_tab', activeTab); } catch {}
-  }, [activeTab]);
+  }, [activeTab, isClientMounted]);
 
   useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_search', searchQuery); } catch {}
-  }, [searchQuery]);
+  }, [searchQuery, isClientMounted]);
 
   useEffect(() => {
-    try { localStorage.setItem('lead_agent_quick_search', quickSearchInput); } catch {}
-  }, [quickSearchInput]);
-
-  useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_region', regionFilter); } catch {}
-  }, [regionFilter]);
+  }, [regionFilter, isClientMounted]);
 
   useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_arrangement', arrangementFilter); } catch {}
-  }, [arrangementFilter]);
+  }, [arrangementFilter, isClientMounted]);
 
   useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_score', scoreFilter); } catch {}
-  }, [scoreFilter]);
+  }, [scoreFilter, isClientMounted]);
 
   useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_lang', languageFilter); } catch {}
-  }, [languageFilter]);
+  }, [languageFilter, isClientMounted]);
 
   useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_freshness', freshnessFilter); } catch {}
-  }, [freshnessFilter]);
+  }, [freshnessFilter, isClientMounted]);
 
   useEffect(() => {
+    if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_sort', sortOrder); } catch {}
-  }, [sortOrder]);
+  }, [sortOrder, isClientMounted]);
+
+  useEffect(() => {
+    if (!isClientMounted) return;
+    try { localStorage.setItem('lead_agent_quick_search', quickSearchInput); } catch {}
+  }, [quickSearchInput, isClientMounted]);
 
   // Modals
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -615,100 +600,129 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const [dragCardDimensions, setDragCardDimensions] = useState<{ width: number; height: number } | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<UserStatus | null>(null);
   const kanbanContainerRef = useRef<HTMLDivElement | null>(null);
-  const dragCandidateRef = useRef<{
-    job: EvaluatedJob;
-    startX: number;
-    startY: number;
-    rect: DOMRect;
-  } | null>(null);
   const dragJobRef = useRef<EvaluatedJob | null>(null);
   dragJobRef.current = activeDragJob;
 
-  useEffect(() => {
-    const handleGlobalPointerMove = (e: PointerEvent) => {
-      // 1. If candidate hasn't reached movement threshold yet, test distance (4px)
-      if (dragCandidateRef.current && !dragJobRef.current) {
-        const dist = Math.hypot(
-          e.clientX - dragCandidateRef.current.startX,
-          e.clientY - dragCandidateRef.current.startY
-        );
-        if (dist > 4) {
-          const candidate = dragCandidateRef.current;
-          setActiveDragJob(candidate.job);
-          setDragCardDimensions({ width: candidate.rect.width, height: candidate.rect.height });
-          setDragPointerPos({ x: e.clientX, y: e.clientY });
-          setDragOverColumnId(candidate.job.userStatus);
+  // Geometric column hit-testing by horizontal coordinate (robust across all screen sizes and touch devices)
+  const getColumnAtCoordinates = (x: number): UserStatus | null => {
+    for (const col of KANBAN_COLUMNS) {
+      const el = document.getElementById(`kanban-col-${col.id}`);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right) {
+          return col.id;
         }
       }
+    }
+    return null;
+  };
 
-      // 2. If actively dragging, update coordinate and highlight target column
-      if (dragJobRef.current) {
-        setDragPointerPos({ x: e.clientX, y: e.clientY });
+  useEffect(() => {
+    if (!activeDragJob) return;
 
-        // Auto-scroll Kanban horizontal view near edges
-        if (kanbanContainerRef.current) {
-          const container = kanbanContainerRef.current;
-          const rect = container.getBoundingClientRect();
-          if (e.clientX < rect.left + 50) {
-            container.scrollLeft -= 10;
-          } else if (e.clientX > rect.right - 50) {
-            container.scrollLeft += 10;
-          }
+    const checkEdgeAutoScroll = (x: number) => {
+      if (kanbanContainerRef.current) {
+        const container = kanbanContainerRef.current;
+        const rect = container.getBoundingClientRect();
+        if (x < rect.left + 50) {
+          container.scrollLeft -= 14;
+        } else if (x > rect.right - 50) {
+          container.scrollLeft += 14;
         }
-
-        // Detect column element under cursor/finger
-        const elements = document.elementsFromPoint(e.clientX, e.clientY);
-        let foundColId: UserStatus | null = null;
-        for (const el of elements) {
-          const colId = el.getAttribute('data-kanban-column-id');
-          if (colId) {
-            foundColId = colId as UserStatus;
-            break;
-          }
-        }
-        setDragOverColumnId(foundColId);
       }
     };
 
-    const handleGlobalPointerUp = (e: PointerEvent) => {
+    // 1. Touch Move: Non-passive listener with e.preventDefault() stops mobile browser viewport scrolling
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      if (touch) {
+        setDragPointerPos({ x: touch.clientX, y: touch.clientY });
+        checkEdgeAutoScroll(touch.clientX);
+        const targetCol = getColumnAtCoordinates(touch.clientX);
+        setDragOverColumnId(targetCol);
+      }
+    };
+
+    // 2. Touch End: Drop on touch release
+    const handleTouchEnd = (e: TouchEvent) => {
       const currentJob = dragJobRef.current;
       if (currentJob) {
-        const elements = document.elementsFromPoint(e.clientX, e.clientY);
-        let targetCol: UserStatus | null = null;
-        for (const el of elements) {
-          const colId = el.getAttribute('data-kanban-column-id');
-          if (colId) {
-            targetCol = colId as UserStatus;
-            break;
-          }
-        }
-
+        const touch = e.changedTouches[0];
+        const targetCol = touch ? getColumnAtCoordinates(touch.clientX) : null;
         if (targetCol && targetCol !== currentJob.userStatus) {
           updateJobStatus(currentJob.id, targetCol);
         }
-
         setActiveDragJob(null);
         setDragPointerPos(null);
         setDragCardDimensions(null);
         setDragOverColumnId(null);
       }
-      dragCandidateRef.current = null;
     };
 
-    window.addEventListener('pointermove', handleGlobalPointerMove, { passive: true });
-    window.addEventListener('pointerup', handleGlobalPointerUp);
-    window.addEventListener('pointercancel', handleGlobalPointerUp);
+    // 3. Pointer Move for Desktop Mouse
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return; // Handled by touch events
+      setDragPointerPos({ x: e.clientX, y: e.clientY });
+      checkEdgeAutoScroll(e.clientX);
+      const targetCol = getColumnAtCoordinates(e.clientX);
+      setDragOverColumnId(targetCol);
+    };
+
+    // 4. Pointer Up for Desktop Mouse
+    const handlePointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      const currentJob = dragJobRef.current;
+      if (currentJob) {
+        const targetCol = getColumnAtCoordinates(e.clientX);
+        if (targetCol && targetCol !== currentJob.userStatus) {
+          updateJobStatus(currentJob.id, targetCol);
+        }
+        setActiveDragJob(null);
+        setDragPointerPos(null);
+        setDragCardDimensions(null);
+        setDragOverColumnId(null);
+      }
+    };
+
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
 
     return () => {
-      window.removeEventListener('pointermove', handleGlobalPointerMove);
-      window.removeEventListener('pointerup', handleGlobalPointerUp);
-      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, []);
+  }, [activeDragJob]);
+
+  const handleTouchStart = (e: React.TouchEvent, job: EvaluatedJob) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a') || target.closest('select')) {
+      return;
+    }
+
+    const touch = e.touches[0];
+    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
+    const rect = cardEl
+      ? cardEl.getBoundingClientRect()
+      : (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+    setActiveDragJob(job);
+    setDragPointerPos({ x: touch.clientX, y: touch.clientY });
+    setDragCardDimensions({ width: rect.width, height: rect.height });
+    setDragOverColumnId(job.userStatus);
+  };
 
   const handleStartDrag = (e: React.PointerEvent, job: EvaluatedJob) => {
-    // Only primary mouse button or touch
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Only primary mouse button (touch is handled by handleTouchStart)
+    if (e.pointerType === 'touch' || e.button !== 0) return;
 
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('a') || target.closest('select')) {
@@ -720,12 +734,10 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       ? cardEl.getBoundingClientRect()
       : (e.currentTarget as HTMLElement).getBoundingClientRect();
 
-    dragCandidateRef.current = {
-      job,
-      startX: e.clientX,
-      startY: e.clientY,
-      rect,
-    };
+    setActiveDragJob(job);
+    setDragPointerPos({ x: e.clientX, y: e.clientY });
+    setDragCardDimensions({ width: rect.width, height: rect.height });
+    setDragOverColumnId(job.userStatus);
   };
 
   // Tab membership rule:
@@ -1494,11 +1506,12 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                             <div className="flex items-center justify-between gap-1.5">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <div
+                                  onTouchStart={(e) => handleTouchStart(e, job)}
                                   onPointerDown={(e) => handleStartDrag(e, job)}
-                                  className="touch-none flex items-center justify-center p-1 -m-1 text-stone-300 group-hover:text-stone-500 active:text-stone-900 cursor-grab active:cursor-grabbing"
-                                  title="Drag to change phase (Desktop & Mobile Touch)"
+                                  className="touch-none flex items-center justify-center p-2 -m-2 text-stone-300 group-hover:text-stone-500 active:text-stone-900 cursor-grab active:cursor-grabbing"
+                                  title="Drag to change phase (Touch & Mouse)"
                                 >
-                                  <GripVerticalIcon className="w-3.5 h-3.5 shrink-0" />
+                                  <GripVerticalIcon className="w-4 h-4 shrink-0" />
                                 </div>
                                 <span className="text-xs font-semibold text-stone-800 truncate">
                                   {job.companyName}
@@ -2299,8 +2312,8 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
           className="fixed pointer-events-none z-[9999] shadow-2xl rounded-xl border border-stone-300/90 bg-white p-3.5 select-none transition-transform duration-75"
           style={{
             width: dragCardDimensions?.width || 280,
-            left: dragPointerPos.x - (dragCardDimensions?.width ? dragCardDimensions.width / 2 : 140),
-            top: dragPointerPos.y - 25,
+            left: Math.max(10, Math.min((typeof window !== 'undefined' ? window.innerWidth : 400) - (dragCardDimensions?.width || 280) - 10, dragPointerPos.x - (dragCardDimensions?.width ? dragCardDimensions.width / 2 : 140))),
+            top: Math.max(10, dragPointerPos.y - 70),
             transform: 'rotate(2.5deg) scale(1.03)',
           }}
         >

@@ -266,13 +266,16 @@ function ChatApp() {
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [imageError, setImageError] = useState('');
-  const [activeView, setActiveView] = useState<'chat' | 'lead-agent'>(() => {
-    if (typeof window !== 'undefined') {
+  const [activeView, setActiveView] = useState<'chat' | 'lead-agent'>('chat');
+
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem('rag_active_view');
-      if (saved === 'lead-agent' || saved === 'chat') return saved;
-    }
-    return 'chat';
-  });
+      if (saved === 'lead-agent' || saved === 'chat') {
+        setActiveView(saved);
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     try {
