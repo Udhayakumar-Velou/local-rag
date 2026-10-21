@@ -666,8 +666,22 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const dragJobRef = useRef<EvaluatedJob | null>(null);
   dragJobRef.current = activeDragJob;
 
-  // Geometric column hit-testing by horizontal coordinate (robust across all screen sizes and touch devices)
-  const getColumnAtCoordinates = (x: number): UserStatus | null => {
+  // Geometric column hit-testing by coordinate (robust across iPhone, mobile touch, and desktop)
+  const getColumnAtCoordinates = (x: number, y?: number): UserStatus | null => {
+    // 1. Mobile & desktop quick pill hit-testing (drag directly onto top column pills)
+    if (typeof y === 'number') {
+      for (const col of KANBAN_COLUMNS) {
+        const pillEl = document.getElementById(`kanban-pill-${col.id}`);
+        if (pillEl) {
+          const rect = pillEl.getBoundingClientRect();
+          if (x >= rect.left - 8 && x <= rect.right + 8 && y >= rect.top - 12 && y <= rect.bottom + 20) {
+            return col.id;
+          }
+        }
+      }
+    }
+
+    // 2. Full column body hit-testing
     for (const col of KANBAN_COLUMNS) {
       const el = document.getElementById(`kanban-col-${col.id}`);
       if (el) {
@@ -695,25 +709,30 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       }
     };
 
-    // 1. Touch Move: Non-passive listener with e.preventDefault() stops mobile browser viewport scrolling
+    // 1. Touch Move: Non-passive listener with e.preventDefault() prevents iOS rubber-banding and scroll hijack
     const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
+      if (e.cancelable) {
+        e.preventDefault();
+      }
       const touch = e.touches[0];
       if (touch) {
         setDragPointerPos({ x: touch.clientX, y: touch.clientY });
         checkEdgeAutoScroll(touch.clientX);
-        const targetCol = getColumnAtCoordinates(touch.clientX);
+        const targetCol = getColumnAtCoordinates(touch.clientX, touch.clientY);
         setDragOverColumnId(targetCol);
       }
     };
 
-    // 2. Touch End: Drop on touch release
+    // 2. Touch End: Drop on touch release with haptic feedback
     const handleTouchEnd = (e: TouchEvent) => {
       const currentJob = dragJobRef.current;
       if (currentJob) {
         const touch = e.changedTouches[0];
-        const targetCol = touch ? getColumnAtCoordinates(touch.clientX) : null;
+        const targetCol = touch ? getColumnAtCoordinates(touch.clientX, touch.clientY) : null;
         if (targetCol && targetCol !== currentJob.userStatus) {
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try { navigator.vibrate([20, 30, 20]); } catch {}
+          }
           updateJobStatus(currentJob.id, targetCol);
         }
         setActiveDragJob(null);
@@ -728,7 +747,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       if (e.pointerType === 'touch') return; // Handled by touch events
       setDragPointerPos({ x: e.clientX, y: e.clientY });
       checkEdgeAutoScroll(e.clientX);
-      const targetCol = getColumnAtCoordinates(e.clientX);
+      const targetCol = getColumnAtCoordinates(e.clientX, e.clientY);
       setDragOverColumnId(targetCol);
     };
 
@@ -737,7 +756,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       if (e.pointerType === 'touch') return;
       const currentJob = dragJobRef.current;
       if (currentJob) {
-        const targetCol = getColumnAtCoordinates(e.clientX);
+        const targetCol = getColumnAtCoordinates(e.clientX, e.clientY);
         if (targetCol && targetCol !== currentJob.userStatus) {
           updateJobStatus(currentJob.id, targetCol);
         }
@@ -772,6 +791,12 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     }
 
     const touch = e.touches[0];
+    if (!touch) return;
+
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try { navigator.vibrate(25); } catch {}
+    }
+
     const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
     const rect = cardEl
       ? cardEl.getBoundingClientRect()
@@ -1019,15 +1044,15 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   };
 
   return (
-    <div className="flex h-full flex-col bg-[#fdfcf9] text-stone-800">
-      {/* Row 1: Clean, Responsive Top Header */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-b border-[#ded9cf] bg-[#fdfcf9] px-4 sm:px-6 py-3">
+    <div className="flex h-full min-h-[100dvh] max-h-[100dvh] flex-col bg-[#fdfcf9] text-stone-800 overscroll-none select-none md:select-auto">
+      {/* Row 1: Clean, Responsive Top Header (iOS Safe Area Aware) */}
+      <header className="flex shrink-0 items-center justify-between gap-2.5 border-b border-[#ded9cf] bg-[#fdfcf9] px-3 sm:px-6 py-2.5 sm:py-3 pt-[max(0.625rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-2.5 min-w-0">
           {onOpenSidebar && (
             <button
               type="button"
               onClick={onOpenSidebar}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#ded9cf] bg-white text-stone-600 hover:bg-[#eeece5] md:hidden"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#ded9cf] bg-white text-stone-600 hover:bg-[#eeece5] active:scale-95 transition md:hidden"
               aria-label="Open menu"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2">
@@ -1043,7 +1068,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
           </div>
 
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <h1 className="truncate text-sm sm:text-base font-bold tracking-tight text-stone-900">
                 Lead Agent · France
               </h1>
@@ -1052,7 +1077,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                 {geminiApiKey ? 'Gemini AI' : 'Active'}
               </span>
             </div>
-            <p className="truncate text-[11px] text-stone-500">
+            <p className="truncate text-[10px] sm:text-[11px] text-stone-500">
               {candidateName ? `${candidateName} • ` : ''}All France
               {lastScanAt && (
                 <span className="ml-1.5 text-stone-400">
@@ -1064,12 +1089,12 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
         </div>
 
         {/* Header Actions */}
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {onBackToChat && (
             <button
               type="button"
               onClick={onBackToChat}
-              className="flex md:hidden items-center gap-1 rounded-xl border border-[#ded9cf] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-[#eeece5]"
+              className="flex md:hidden items-center gap-1 rounded-xl border border-[#ded9cf] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-[#eeece5] active:scale-95 transition"
             >
               <span>💬 Chat</span>
             </button>
@@ -1079,7 +1104,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
             type="button"
             disabled={isScanningFrance}
             onClick={() => handleTriggerLiveScan()}
-            className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 sm:px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-amber-700 disabled:opacity-50 transition active:scale-95"
+            className="hidden sm:flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 sm:px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-amber-700 disabled:opacity-50 transition active:scale-95"
           >
             {isScanningFrance ? (
               <>
@@ -1099,8 +1124,8 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
             onClick={() => setShowEvaluateModal(true)}
             className="flex items-center gap-1 rounded-xl bg-stone-900 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-stone-800 transition active:scale-95"
           >
-            <span>+ Evaluate</span>
-            <span className="hidden sm:inline">Job</span>
+            <span>+</span>
+            <span className="hidden sm:inline">Evaluate Job</span>
           </button>
 
           <button
@@ -1109,7 +1134,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               setProfileModalTab('profile');
               setShowProfileModal(true);
             }}
-            className="flex items-center gap-1.5 rounded-xl border border-[#ded9cf] bg-white px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-stone-800 shadow-2xs hover:bg-[#eeece5] transition"
+            className="hidden sm:flex items-center gap-1.5 rounded-xl border border-[#ded9cf] bg-white px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-stone-800 shadow-2xs hover:bg-[#eeece5] transition active:scale-95"
             title="Manage Profile, Master Prompt & Gemini API Key"
           >
             <span className="flex h-4 w-4 items-center justify-center rounded-full bg-stone-800 text-[9px] font-bold text-white">
@@ -1530,22 +1555,54 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       ) : viewMode === 'kanban' ? (
         /* Azure DevOps / Task Manager-style Kanban Board with HTML5 Drag-and-Drop & Mobile Snapping */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Mobile-Only Quick Column Switcher */}
+          {/* Mobile-Only Quick Column Switcher & Interactive Drop Targets */}
           <div className="flex sm:hidden items-center gap-1.5 overflow-x-auto px-3 py-2 bg-[#f7f5f0] border-b border-[#ded9cf] scrollbar-none shrink-0">
+            {activeDragJob && (
+              <span className="text-[10px] font-bold text-amber-800 shrink-0 uppercase tracking-wider bg-amber-100/90 px-2 py-0.5 rounded-md animate-pulse">
+                Drop to:
+              </span>
+            )}
             {KANBAN_COLUMNS.map((col) => {
               const colJobs = getKanbanColumnJobs(col.id);
+              const isTargetOver = dragOverColumnId === col.id;
+              const isSource = activeDragJob?.userStatus === col.id;
+
               return (
                 <button
                   key={col.id}
+                  id={`kanban-pill-${col.id}`}
                   type="button"
                   onClick={() => {
+                    if (activeDragJob) {
+                      updateJobStatus(activeDragJob.id, col.id);
+                      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                        try { navigator.vibrate([20, 30, 20]); } catch {}
+                      }
+                      setActiveDragJob(null);
+                      setDragPointerPos(null);
+                      setDragCardDimensions(null);
+                      setDragOverColumnId(null);
+                      return;
+                    }
                     const el = document.getElementById(`kanban-col-${col.id}`);
                     el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
                   }}
-                  className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white text-stone-700 border border-stone-200/80 shadow-2xs active:bg-stone-100"
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    isTargetOver
+                      ? 'bg-stone-900 text-white ring-2 ring-stone-900 scale-105 shadow-md'
+                      : activeDragJob
+                      ? isSource
+                        ? 'bg-stone-100 text-stone-400 border border-stone-200 opacity-60'
+                        : 'bg-amber-50 text-amber-900 border-2 border-dashed border-amber-400 shadow-xs'
+                      : 'bg-white text-stone-700 border border-stone-200/80 shadow-2xs active:bg-stone-100'
+                  }`}
                 >
                   <span>{col.title}</span>
-                  <span className="rounded-full px-1.5 py-0.2 text-[10px] bg-stone-100 text-stone-600 font-semibold">
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                      isTargetOver ? 'bg-white text-stone-900' : 'bg-stone-100 text-stone-600'
+                    }`}
+                  >
                     {colJobs.length}
                   </span>
                 </button>
@@ -1616,9 +1673,13 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                             <div className="flex items-center justify-between gap-1.5">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <div
-                                  onTouchStart={(e) => handleTouchStart(e, job)}
+                                  onTouchStart={(e) => {
+                                    e.stopPropagation();
+                                    handleTouchStart(e, job);
+                                  }}
                                   onPointerDown={(e) => handleStartDrag(e, job)}
-                                  className="touch-none flex items-center justify-center p-2 -m-2 text-stone-300 group-hover:text-stone-500 active:text-stone-900 cursor-grab active:cursor-grabbing"
+                                  className="touch-none flex items-center justify-center p-2.5 -m-2 text-stone-400 group-hover:text-stone-600 active:text-stone-900 cursor-grab active:cursor-grabbing select-none"
+                                  style={{ touchAction: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
                                   title="Drag to change phase (Touch & Mouse)"
                                 >
                                   <GripVerticalIcon className="w-4 h-4 shrink-0" />
@@ -1963,10 +2024,11 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
 
       {/* PROFILE, MASTER PROMPT & API KEY CLOUD SETTINGS MODAL */}
       {showProfileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-2 sm:p-4">
-          <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-white shadow-2xl flex flex-col border border-stone-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-3xl max-h-[90vh] sm:max-h-[92vh] rounded-t-3xl sm:rounded-2xl bg-white shadow-2xl flex flex-col border border-stone-200 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200">
+            <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto sm:hidden mt-2 shrink-0" />
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-stone-200 px-4 sm:px-6 py-3.5 bg-[#fdfcf9]">
+            <div className="flex items-center justify-between border-b border-stone-200 px-4 sm:px-6 py-3 bg-[#fdfcf9]">
               <div>
                 <h3 className="text-sm sm:text-base font-semibold text-stone-900">
                   Profile, Master Prompt & Cloud Settings
@@ -2266,10 +2328,11 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
         </div>
       )}
 
-      {/* SCORE BREAKDOWN & FULL JOB DETAILS MODAL */}
+      {/* SCORE BREAKDOWN & FULL JOB DETAILS MODAL (Native Bottom Sheet on Mobile) */}
       {selectedJobDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-2 sm:p-4">
-          <div className="w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-stone-200 p-4 sm:p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="w-full sm:max-w-xl max-h-[88vh] sm:max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl bg-white shadow-2xl border border-stone-200 p-4 sm:p-6 space-y-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200">
+            <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto sm:hidden mb-1 shrink-0" />
             <div className="flex items-start justify-between gap-3 border-b border-stone-200 pb-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -2496,6 +2559,75 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
           </div>
         </div>
       )}
+
+      {/* Native iOS Mobile Bottom Navigation Bar */}
+      <nav className="sm:hidden shrink-0 border-t border-[#ded9cf] bg-white/95 backdrop-blur-md px-3 py-1.5 flex items-center justify-around z-30 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-2px_10px_rgba(0,0,0,0.03)]">
+        <button
+          type="button"
+          onClick={() => setViewMode('list')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-4 rounded-xl transition active:scale-95 ${
+            viewMode === 'list' ? 'text-stone-950 font-bold' : 'text-stone-400 font-medium'
+          }`}
+        >
+          <div className={`p-1 rounded-lg ${viewMode === 'list' ? 'bg-stone-100' : ''}`}>
+            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={viewMode === 'list' ? 2.4 : 1.8}>
+              <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <span className="text-[10px] tracking-tight">Feed</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setViewMode('kanban')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-4 rounded-xl transition active:scale-95 ${
+            viewMode === 'kanban' ? 'text-stone-950 font-bold' : 'text-stone-400 font-medium'
+          }`}
+        >
+          <div className={`p-1 rounded-lg ${viewMode === 'kanban' ? 'bg-stone-100' : ''}`}>
+            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={viewMode === 'kanban' ? 2.4 : 1.8}>
+              <rect x="3" y="4" width="5" height="16" rx="1.5" />
+              <rect x="10" y="4" width="5" height="11" rx="1.5" />
+              <rect x="17" y="4" width="5" height="14" rx="1.5" />
+            </svg>
+          </div>
+          <span className="text-[10px] tracking-tight">Board</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isScanningFrance}
+          onClick={() => handleTriggerLiveScan()}
+          className="flex flex-col items-center gap-0.5 py-1 px-4 rounded-xl text-amber-600 active:scale-95 transition"
+        >
+          <div className="p-1 rounded-lg bg-amber-50">
+            {isScanningFrance ? (
+              <span className="h-5 w-5 block rounded-full border-2 border-amber-600 border-t-transparent animate-spin" />
+            ) : (
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            )}
+          </div>
+          <span className="text-[10px] font-semibold tracking-tight">Scan</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setProfileModalTab('profile');
+            setShowProfileModal(true);
+          }}
+          className="flex flex-col items-center gap-0.5 py-1 px-4 rounded-xl text-stone-600 active:scale-95 transition"
+        >
+          <div className="p-1 rounded-lg">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-stone-900 text-[10px] font-bold text-white">
+              {candidateName ? candidateName.charAt(0).toUpperCase() : '👤'}
+            </span>
+          </div>
+          <span className="text-[10px] font-medium tracking-tight">Profile</span>
+        </button>
+      </nav>
     </div>
   );
 }
