@@ -662,6 +662,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const [dragPointerPos, setDragPointerPos] = useState<{ x: number; y: number } | null>(null);
   const [dragCardDimensions, setDragCardDimensions] = useState<{ width: number; height: number } | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<UserStatus | null>(null);
+  const [mobileMoveJob, setMobileMoveJob] = useState<EvaluatedJob | null>(null);
   const kanbanContainerRef = useRef<HTMLDivElement | null>(null);
   const dragJobRef = useRef<EvaluatedJob | null>(null);
   dragJobRef.current = activeDragJob;
@@ -697,6 +698,12 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   useEffect(() => {
     if (!activeDragJob) return;
 
+    // Temporarily disable CSS scroll-snap on the container during drag so iOS Safari doesn't fight the drag
+    if (kanbanContainerRef.current) {
+      kanbanContainerRef.current.style.touchAction = 'none';
+      kanbanContainerRef.current.style.scrollSnapType = 'none';
+    }
+
     const checkEdgeAutoScroll = (x: number) => {
       if (kanbanContainerRef.current) {
         const container = kanbanContainerRef.current;
@@ -709,62 +716,51 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       }
     };
 
-    // 1. Touch Move: Non-passive listener with e.preventDefault() prevents iOS rubber-banding and scroll hijack
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.cancelable) {
-        e.preventDefault();
-      }
-      const touch = e.touches[0];
-      if (touch) {
-        setDragPointerPos({ x: touch.clientX, y: touch.clientY });
-        checkEdgeAutoScroll(touch.clientX);
-        const targetCol = getColumnAtCoordinates(touch.clientX, touch.clientY);
-        setDragOverColumnId(targetCol);
-      }
+    const handleMoveCoords = (x: number, y: number) => {
+      setDragPointerPos({ x, y });
+      checkEdgeAutoScroll(x);
+      const targetCol = getColumnAtCoordinates(x, y);
+      setDragOverColumnId(targetCol);
     };
 
-    // 2. Touch End: Drop on touch release with haptic feedback
-    const handleTouchEnd = (e: TouchEvent) => {
+    const handleDropCoords = (x: number, y: number) => {
       const currentJob = dragJobRef.current;
       if (currentJob) {
-        const touch = e.changedTouches[0];
-        const targetCol = touch ? getColumnAtCoordinates(touch.clientX, touch.clientY) : null;
+        const targetCol = getColumnAtCoordinates(x, y);
         if (targetCol && targetCol !== currentJob.userStatus) {
           if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
             try { navigator.vibrate([20, 30, 20]); } catch {}
           }
           updateJobStatus(currentJob.id, targetCol);
         }
-        setActiveDragJob(null);
-        setDragPointerPos(null);
-        setDragCardDimensions(null);
-        setDragOverColumnId(null);
       }
+      dragJobRef.current = null;
+      setActiveDragJob(null);
+      setDragPointerPos(null);
+      setDragCardDimensions(null);
+      setDragOverColumnId(null);
     };
 
-    // 3. Pointer Move for Desktop Mouse
+    // 1. Touch listeners with cancelable check
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      const touch = e.touches[0];
+      if (touch) handleMoveCoords(touch.clientX, touch.clientY);
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      if (touch) handleDropCoords(touch.clientX, touch.clientY);
+      else handleDropCoords(0, 0);
+    };
+
+    // 2. Pointer listeners for unified touch & desktop mouse
     const handlePointerMove = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') return; // Handled by touch events
-      setDragPointerPos({ x: e.clientX, y: e.clientY });
-      checkEdgeAutoScroll(e.clientX);
-      const targetCol = getColumnAtCoordinates(e.clientX, e.clientY);
-      setDragOverColumnId(targetCol);
+      handleMoveCoords(e.clientX, e.clientY);
     };
 
-    // 4. Pointer Up for Desktop Mouse
     const handlePointerUp = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') return;
-      const currentJob = dragJobRef.current;
-      if (currentJob) {
-        const targetCol = getColumnAtCoordinates(e.clientX, e.clientY);
-        if (targetCol && targetCol !== currentJob.userStatus) {
-          updateJobStatus(currentJob.id, targetCol);
-        }
-        setActiveDragJob(null);
-        setDragPointerPos(null);
-        setDragCardDimensions(null);
-        setDragOverColumnId(null);
-      }
+      handleDropCoords(e.clientX, e.clientY);
     };
 
     window.addEventListener('touchmove', handleTouchMove, { passive: false });
@@ -775,6 +771,10 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     window.addEventListener('pointercancel', handlePointerUp);
 
     return () => {
+      if (kanbanContainerRef.current) {
+        kanbanContainerRef.current.style.touchAction = '';
+        kanbanContainerRef.current.style.scrollSnapType = '';
+      }
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('touchcancel', handleTouchEnd);
@@ -783,6 +783,36 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       window.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [activeDragJob]);
+
+  // Unified start-drag handler for both Pointer (mouse/pen) and Touch (iPhone/iPad/Android)
+  const handleStartDrag = (e: React.PointerEvent, job: EvaluatedJob) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a') || target.closest('select')) {
+      return;
+    }
+
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    // Capture pointer to isolate gesture from iOS Safari native scroll
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try { navigator.vibrate(25); } catch {}
+    }
+
+    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
+    const rect = cardEl
+      ? cardEl.getBoundingClientRect()
+      : (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+    dragJobRef.current = job;
+    setActiveDragJob(job);
+    setDragPointerPos({ x: e.clientX, y: e.clientY });
+    setDragCardDimensions({ width: rect.width, height: rect.height });
+    setDragOverColumnId(job.userStatus);
+  };
 
   const handleTouchStart = (e: React.TouchEvent, job: EvaluatedJob) => {
     const target = e.target as HTMLElement;
@@ -802,28 +832,9 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       ? cardEl.getBoundingClientRect()
       : (e.currentTarget as HTMLElement).getBoundingClientRect();
 
+    dragJobRef.current = job;
     setActiveDragJob(job);
     setDragPointerPos({ x: touch.clientX, y: touch.clientY });
-    setDragCardDimensions({ width: rect.width, height: rect.height });
-    setDragOverColumnId(job.userStatus);
-  };
-
-  const handleStartDrag = (e: React.PointerEvent, job: EvaluatedJob) => {
-    // Only primary mouse button (touch is handled by handleTouchStart)
-    if (e.pointerType === 'touch' || e.button !== 0) return;
-
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a') || target.closest('select')) {
-      return;
-    }
-
-    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
-    const rect = cardEl
-      ? cardEl.getBoundingClientRect()
-      : (e.currentTarget as HTMLElement).getBoundingClientRect();
-
-    setActiveDragJob(job);
-    setDragPointerPos({ x: e.clientX, y: e.clientY });
     setDragCardDimensions({ width: rect.width, height: rect.height });
     setDragOverColumnId(job.userStatus);
   };
@@ -1764,22 +1775,18 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                                   <ExternalLinkIcon className="w-3.5 h-3.5" />
                                 </a>
 
-                                <select
-                                  value={job.userStatus}
-                                  onChange={(e) => {
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
                                     e.stopPropagation();
-                                    updateJobStatus(job.id, e.target.value as UserStatus);
+                                    setMobileMoveJob(job);
                                   }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="rounded text-[10px] bg-stone-50 border border-stone-200 text-stone-600 py-0.5 px-1 focus:outline-none cursor-pointer"
-                                  title="Move stage"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-stone-100 hover:bg-stone-200 border border-stone-200/90 px-2 py-0.5 text-[11px] font-semibold text-stone-700 active:scale-95 transition"
+                                  title="Change phase (1-tap menu)"
                                 >
-                                  <option value="inbox">Inbox</option>
-                                  <option value="saved">Shortlist</option>
-                                  <option value="applied">Applied</option>
-                                  <option value="interviewing">Interview</option>
-                                  <option value="archived">Archive</option>
-                                </select>
+                                  <span>{KANBAN_COLUMNS.find((c) => c.id === job.userStatus)?.title || 'Move'}</span>
+                                  <span className="text-[9px] text-stone-400">▾</span>
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -2628,6 +2635,74 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
           <span className="text-[10px] font-medium tracking-tight">Profile</span>
         </button>
       </nav>
+
+      {/* 1-Tap Mobile Phase Movement Bottom Sheet */}
+      {mobileMoveJob && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setMobileMoveJob(null)}
+        >
+          <div
+            className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl border border-stone-200 shadow-2xl p-5 space-y-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto sm:hidden mb-1 shrink-0" />
+            <div className="flex items-start justify-between border-b border-stone-100 pb-3">
+              <div className="min-w-0 pr-2">
+                <h3 className="text-sm font-bold text-stone-900">Move Job Phase</h3>
+                <p className="text-xs text-stone-500 truncate mt-0.5">
+                  <span className="font-semibold text-stone-700">{mobileMoveJob.companyName}</span> · {mobileMoveJob.exactJobTitle}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMoveJob(null)}
+                className="p-1 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              >
+                <XIcon className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(
+                [
+                  { id: 'inbox', label: 'Inbox (New Leads)', icon: <InboxIcon className="w-4 h-4 text-stone-500" /> },
+                  { id: 'saved', label: 'Shortlist (Saved for Application)', icon: <BookmarkIcon className="w-4 h-4 text-amber-600" /> },
+                  { id: 'applied', label: 'Applied', icon: <CheckCircleIcon className="w-4 h-4 text-emerald-600" /> },
+                  { id: 'interviewing', label: 'Interviewing', icon: <CalendarIcon className="w-4 h-4 text-purple-600" /> },
+                  { id: 'archived', label: 'Archive / Rejected', icon: <ArchiveIcon className="w-4 h-4 text-stone-400" /> },
+                ] as const
+              ).map((phase) => {
+                const isCurrent = mobileMoveJob.userStatus === phase.id;
+                return (
+                  <button
+                    key={phase.id}
+                    type="button"
+                    onClick={() => {
+                      updateJobStatus(mobileMoveJob.id, phase.id as UserStatus);
+                      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                        try { navigator.vibrate([20, 30, 20]); } catch {}
+                      }
+                      setMobileMoveJob(null);
+                    }}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition active:scale-[0.98] ${
+                      isCurrent
+                        ? 'border-stone-900 bg-stone-900 text-white shadow-xs'
+                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {phase.icon}
+                      <span>{phase.label}</span>
+                    </div>
+                    {isCurrent && <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full">Current</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
