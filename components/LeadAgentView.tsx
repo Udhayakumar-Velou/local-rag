@@ -667,6 +667,22 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const dragJobRef = useRef<EvaluatedJob | null>(null);
   dragJobRef.current = activeDragJob;
 
+  const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartRef = useRef<{
+    job: EvaluatedJob;
+    startX: number;
+    startY: number;
+    cardEl: HTMLElement | null;
+  } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (touchTimerRef.current) {
+        clearTimeout(touchTimerRef.current);
+      }
+    };
+  }, []);
+
   // Geometric column hit-testing by coordinate (robust across iPhone, mobile touch, and desktop)
   const getColumnAtCoordinates = (x: number, y?: number): UserStatus | null => {
     // 1. Mobile & desktop quick pill hit-testing (drag directly onto top column pills)
@@ -784,59 +800,97 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     };
   }, [activeDragJob]);
 
-  // Unified start-drag handler for both Pointer (mouse/pen) and Touch (iPhone/iPad/Android)
-  const handleStartDrag = (e: React.PointerEvent, job: EvaluatedJob) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a') || target.closest('select')) {
-      return;
-    }
-
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-
-    // Capture pointer to isolate gesture from iOS Safari native scroll
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {}
-
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      try { navigator.vibrate(25); } catch {}
-    }
-
-    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
-    const rect = cardEl
-      ? cardEl.getBoundingClientRect()
-      : (e.currentTarget as HTMLElement).getBoundingClientRect();
-
+  // Activates the floating drag ghost and begins tracking
+  const startActiveDrag = (job: EvaluatedJob, clientX: number, clientY: number, cardEl: HTMLElement | null) => {
+    const rect = cardEl ? cardEl.getBoundingClientRect() : null;
     dragJobRef.current = job;
     setActiveDragJob(job);
-    setDragPointerPos({ x: e.clientX, y: e.clientY });
-    setDragCardDimensions({ width: rect.width, height: rect.height });
+    setDragPointerPos({ x: clientX, y: clientY });
+    setDragCardDimensions(rect ? { width: rect.width, height: rect.height } : { width: 280, height: 140 });
     setDragOverColumnId(job.userStatus);
   };
 
-  const handleTouchStart = (e: React.TouchEvent, job: EvaluatedJob) => {
+  // Desktop mouse drag from handle
+  const handleGripPointerDown = (e: React.PointerEvent, job: EvaluatedJob) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('a') || target.closest('select')) {
       return;
+    }
+    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement | null;
+    startActiveDrag(job, e.clientX, e.clientY, cardEl);
+  };
+
+  // Mobile / Touch press-and-hold drag on handle:
+  // Requires intentional 200ms hold. If the user moves > 8px (swiping or scrolling),
+  // the hold is immediately cancelled and native smooth column sliding proceeds uninterrupted.
+  const handleGripTouchStart = (e: React.TouchEvent, job: EvaluatedJob) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a') || target.closest('select')) {
+      return;
+    }
+
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
     }
 
     const touch = e.touches[0];
     if (!touch) return;
 
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      try { navigator.vibrate(25); } catch {}
-    }
+    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement | null;
+    const startX = touch.clientX;
+    const startY = touch.clientY;
 
-    const cardEl = (e.currentTarget as HTMLElement).closest('[data-job-card]') as HTMLElement;
-    const rect = cardEl
-      ? cardEl.getBoundingClientRect()
-      : (e.currentTarget as HTMLElement).getBoundingClientRect();
+    touchStartRef.current = {
+      job,
+      startX,
+      startY,
+      cardEl,
+    };
 
-    dragJobRef.current = job;
-    setActiveDragJob(job);
-    setDragPointerPos({ x: touch.clientX, y: touch.clientY });
-    setDragCardDimensions({ width: rect.width, height: rect.height });
-    setDragOverColumnId(job.userStatus);
+    const cleanupEarlyTouch = () => {
+      if (touchTimerRef.current) {
+        clearTimeout(touchTimerRef.current);
+        touchTimerRef.current = null;
+      }
+      touchStartRef.current = null;
+      window.removeEventListener('touchmove', onEarlyTouchMove);
+      window.removeEventListener('touchend', cleanupEarlyTouch);
+      window.removeEventListener('touchcancel', cleanupEarlyTouch);
+    };
+
+    const onEarlyTouchMove = (evt: TouchEvent) => {
+      const t = evt.touches[0];
+      if (t) {
+        const dx = Math.abs(t.clientX - startX);
+        const dy = Math.abs(t.clientY - startY);
+        // Finger moved: user is sliding between sections or scrolling cards.
+        // Immediately abort the drag intent so scrolling happens smoothly without any accidental drag!
+        if (dx > 8 || dy > 8) {
+          cleanupEarlyTouch();
+        }
+      }
+    };
+
+    window.addEventListener('touchmove', onEarlyTouchMove, { passive: true });
+    window.addEventListener('touchend', cleanupEarlyTouch, { once: true });
+    window.addEventListener('touchcancel', cleanupEarlyTouch, { once: true });
+
+    touchTimerRef.current = setTimeout(() => {
+      window.removeEventListener('touchmove', onEarlyTouchMove);
+      window.removeEventListener('touchend', cleanupEarlyTouch);
+      window.removeEventListener('touchcancel', cleanupEarlyTouch);
+
+      if (touchStartRef.current) {
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try { navigator.vibrate(35); } catch {}
+        }
+        startActiveDrag(touchStartRef.current.job, touchStartRef.current.startX, touchStartRef.current.startY, touchStartRef.current.cardEl);
+      }
+      touchTimerRef.current = null;
+      touchStartRef.current = null;
+    }, 200);
   };
 
   // Tab membership rule:
@@ -1673,7 +1727,6 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                           <div
                             key={job.id}
                             data-job-card={job.id}
-                            onPointerDown={(e) => handleStartDrag(e, job)}
                             className={`group relative rounded-xl border bg-white p-3.5 transition-all duration-150 space-y-2.5 select-none ${
                               isDragging
                                 ? 'opacity-30 border-dashed border-2 border-stone-400 bg-stone-50 scale-[0.98]'
@@ -1684,14 +1737,11 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                             <div className="flex items-center justify-between gap-1.5">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <div
-                                  onTouchStart={(e) => {
-                                    e.stopPropagation();
-                                    handleTouchStart(e, job);
-                                  }}
-                                  onPointerDown={(e) => handleStartDrag(e, job)}
-                                  className="touch-none flex items-center justify-center p-2.5 -m-2 text-stone-400 group-hover:text-stone-600 active:text-stone-900 cursor-grab active:cursor-grabbing select-none"
-                                  style={{ touchAction: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
-                                  title="Drag to change phase (Touch & Mouse)"
+                                  onTouchStart={(e) => handleGripTouchStart(e, job)}
+                                  onPointerDown={(e) => handleGripPointerDown(e, job)}
+                                  className="flex items-center justify-center p-1.5 text-stone-400 group-hover:text-stone-600 active:text-stone-900 cursor-grab active:cursor-grabbing select-none"
+                                  style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
+                                  title="Hold to drag (Touch) or click & drag (Mouse)"
                                 >
                                   <GripVerticalIcon className="w-4 h-4 shrink-0" />
                                 </div>
