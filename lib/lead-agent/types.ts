@@ -60,6 +60,7 @@ export interface EvaluatedJob {
   missingOrWeakerRequirements: string[];
   potentialEligibilityConcerns: string[];
   geminiSummary: string;
+  fullJobDescription?: string;
 
   // CV Recommendation
   recommendedCv: 'CV_EN.pdf' | 'CV_FR.pdf';
@@ -69,6 +70,7 @@ export interface EvaluatedJob {
   // URLs & Status
   directApplicationUrl: string;
   sourceUrl: string;
+  source?: string;
   listingStatus: 'New' | 'Previously Seen' | 'Updated' | 'Unverified';
   userStatus: UserStatus;
   scoredBy?: 'gemini' | 'heuristic';

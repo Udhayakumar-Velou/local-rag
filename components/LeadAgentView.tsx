@@ -154,6 +154,60 @@ function cleanLocation(city: string, region: string): string {
   return c || r;
 }
 
+function formatLastScanTime(isoDate: string): string {
+  try {
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return '';
+
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    if (isToday) {
+      return `Today at ${timeStr}`;
+    }
+
+    const dateStr = d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+
+    return `${dateStr} at ${timeStr}`;
+  } catch {
+    return '';
+  }
+}
+
+function getJobSourceBadge(job: EvaluatedJob) {
+  const isWttj =
+    job.source?.toLowerCase().includes('jungle') ||
+    job.source?.toLowerCase().includes('wttj') ||
+    job.id.startsWith('wttj-') ||
+    (job.directApplicationUrl && job.directApplicationUrl.includes('welcometothejungle.com'));
+
+  if (isWttj) {
+    return {
+      label: 'Welcome to the Jungle',
+      shortLabel: 'WTTJ',
+      className: 'bg-amber-50 text-amber-800 border-amber-200/80',
+    };
+  }
+
+  return {
+    label: 'LinkedIn France',
+    shortLabel: 'LinkedIn',
+    className: 'bg-sky-50 text-sky-800 border-sky-200/80',
+  };
+}
+
 const TAB_DISPLAY_LABELS: Record<DashboardTab, string> = {
   'All Jobs': 'All Jobs',
   'Combined AI + Software Engineering': 'AI + Full-Stack',
@@ -241,6 +295,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   // Local UI Filters (persisted in localStorage so user searches are retained across logins and refreshes)
   const [searchQuery, setSearchQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState('All France');
+  const [platformFilter, setPlatformFilter] = useState<'All' | 'LinkedIn' | 'WTTJ' | string>('All');
   const [arrangementFilter, setArrangementFilter] = useState<'All' | 'Remote' | 'Hybrid' | 'On-site'>('All');
   const [scoreFilter, setScoreFilter] = useState<'All' | '85+' | '70-84' | '55-69'>('All');
   const [languageFilter, setLanguageFilter] = useState<'All' | 'EN' | 'FR'>('All');
@@ -285,6 +340,9 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
       const savedScore = localStorage.getItem('lead_agent_score');
       if (savedScore) setScoreFilter(savedScore as any);
 
+      const savedPlatform = localStorage.getItem('lead_agent_platform');
+      if (savedPlatform) setPlatformFilter(savedPlatform);
+
       const savedLang = localStorage.getItem('lead_agent_lang');
       if (savedLang) setLanguageFilter(savedLang as any);
 
@@ -326,6 +384,11 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     if (!isClientMounted) return;
     try { localStorage.setItem('lead_agent_score', scoreFilter); } catch {}
   }, [scoreFilter, isClientMounted]);
+
+  useEffect(() => {
+    if (!isClientMounted) return;
+    try { localStorage.setItem('lead_agent_platform', platformFilter); } catch {}
+  }, [platformFilter, isClientMounted]);
 
   useEffect(() => {
     if (!isClientMounted) return;
@@ -817,6 +880,12 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     if (scoreFilter === '70-84' && (job.overallScore < 70 || job.overallScore >= 85)) return false;
     if (scoreFilter === '55-69' && (job.overallScore < 55 || job.overallScore >= 70)) return false;
 
+    if (platformFilter !== 'All') {
+      const badge = getJobSourceBadge(job);
+      if (platformFilter === 'LinkedIn' && badge.shortLabel !== 'LinkedIn') return false;
+      if (platformFilter === 'WTTJ' && badge.shortLabel !== 'WTTJ') return false;
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchText =
@@ -917,12 +986,14 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
   const activeAdvancedFilterCount =
     (arrangementFilter !== 'All' ? 1 : 0) +
     (scoreFilter !== 'All' ? 1 : 0) +
+    (platformFilter !== 'All' ? 1 : 0) +
     (freshnessFilter === 'Previously Seen' ? 1 : 0) +
     (sortOrder !== 'newest_posted' ? 1 : 0);
 
   const resetAllFilters = () => {
     setSearchQuery('');
     setRegionFilter('All France');
+    setPlatformFilter('All');
     setArrangementFilter('All');
     setScoreFilter('All');
     setLanguageFilter('All');
@@ -931,6 +1002,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
     try {
       localStorage.removeItem('lead_agent_search');
       localStorage.removeItem('lead_agent_region');
+      localStorage.removeItem('lead_agent_platform');
       localStorage.removeItem('lead_agent_arrangement');
       localStorage.removeItem('lead_agent_score');
       localStorage.removeItem('lead_agent_lang');
@@ -984,7 +1056,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               {candidateName ? `${candidateName} • ` : ''}All France
               {lastScanAt && (
                 <span className="ml-1.5 text-stone-400">
-                  • Scanned {new Date(lastScanAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  • Scanned {formatLastScanTime(lastScanAt)}
                 </span>
               )}
             </p>
@@ -1236,6 +1308,18 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               <option value="Grand Est">Strasbourg</option>
             </select>
 
+            {/* Platform Filter Dropdown (All Platforms, LinkedIn, Welcome to the Jungle) */}
+            <select
+              value={platformFilter}
+              onChange={(e) => setPlatformFilter(e.target.value)}
+              className="max-w-[170px] sm:max-w-none rounded-xl border border-[#ded9cf] bg-[#fdfcf9] px-2.5 py-1.5 text-xs font-semibold text-stone-800 focus:outline-none"
+              title="Filter by job platform"
+            >
+              <option value="All">All Platforms</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="WTTJ">Welcome to the Jungle</option>
+            </select>
+
             <button
               type="button"
               onClick={() => setShowFiltersDrawer((prev) => !prev)}
@@ -1393,6 +1477,31 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                     </button>
                   ))}
                 </div>
+
+                {/* Platform / Source */}
+                <div className="flex items-center gap-1">
+                  <span className="text-stone-500 font-medium">Source:</span>
+                  {(
+                    [
+                      { id: 'All', label: 'All' },
+                      { id: 'LinkedIn', label: 'LinkedIn' },
+                      { id: 'WTTJ', label: 'WTTJ' },
+                    ] as const
+                  ).map((pf) => (
+                    <button
+                      key={pf.id}
+                      type="button"
+                      onClick={() => setPlatformFilter(pf.id)}
+                      className={`rounded-lg px-2 py-1 text-xs font-medium transition ${
+                        platformFilter === pf.id
+                          ? 'bg-stone-900 text-white font-semibold'
+                          : 'bg-white text-stone-600 border border-[#ded9cf] hover:bg-[#eeece5]'
+                      }`}
+                    >
+                      {pf.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <button
@@ -1490,6 +1599,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                         const isFrCv = job.recommendedCv === 'CV_FR.pdf';
                         const isNewlyScraped = job.listingStatus === 'New';
                         const isDragging = activeDragJob?.id === job.id;
+                        const sourceBadge = getJobSourceBadge(job);
 
                         return (
                           <div
@@ -1539,9 +1649,16 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                               {job.exactJobTitle}
                             </h4>
 
-                            {/* Location & Time */}
-                            <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                            {/* Location, Source & Time */}
+                            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-400">
                               <span className="truncate">{cleanLocation(job.city, job.region)}</span>
+                              <span>·</span>
+                              <span
+                                className={`rounded px-1.5 py-0.2 text-[9px] font-semibold border ${sourceBadge.className}`}
+                                title={`Discovered on ${sourceBadge.label}`}
+                              >
+                                {sourceBadge.shortLabel}
+                              </span>
                               <span>·</span>
                               <span className="shrink-0">{job.publicationDate}</span>
                               {isNewlyScraped && (
@@ -1581,7 +1698,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                                   rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
                                   className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition"
-                                  title="Open LinkedIn application"
+                                  title={`Open ${sourceBadge.label} posting`}
                                 >
                                   <ExternalLinkIcon className="w-3.5 h-3.5" />
                                 </a>
@@ -1640,6 +1757,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
               const isFrCv = job.recommendedCv === 'CV_FR.pdf';
               const displayCvName = isFrCv ? cvFrName : cvEnName;
               const isNewlyScraped = job.listingStatus === 'New';
+              const sourceBadge = getJobSourceBadge(job);
 
               return (
                 <div
@@ -1660,6 +1778,13 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                         <span className="text-stone-300">·</span>
                         <span className="rounded-md bg-stone-100/90 px-2 py-0.5 text-[11px] font-medium text-stone-600">
                           {job.employmentType} · {job.workingArrangement}
+                        </span>
+                        <span className="text-stone-300">·</span>
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-[11px] font-semibold border ${sourceBadge.className}`}
+                          title={`Discovered from ${sourceBadge.label}`}
+                        >
+                          {sourceBadge.shortLabel}
                         </span>
                         <span className="text-stone-300">·</span>
                         <span className="inline-flex items-center gap-1 text-stone-400 text-[11px]">
@@ -2147,9 +2272,13 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
           <div className="w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-stone-200 p-4 sm:p-6 space-y-4">
             <div className="flex items-start justify-between gap-3 border-b border-stone-200 pb-3">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="rounded-md bg-stone-100 border border-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-700">
                     {selectedJobDetails.jobCategory}
+                  </span>
+                  <span className="text-xs text-stone-300">·</span>
+                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold border ${getJobSourceBadge(selectedJobDetails).className}`}>
+                    {getJobSourceBadge(selectedJobDetails).label}
                   </span>
                   <span className="text-xs text-stone-300">·</span>
                   <span className="text-xs text-stone-500 inline-flex items-center gap-1">
@@ -2199,6 +2328,22 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                   </ul>
                 </div>
               )}
+            </div>
+
+            {/* Full Scraped Job Description ("About the job") */}
+            <div className="rounded-xl border border-stone-200/90 bg-[#fdfcf9] p-3.5 space-y-2 text-xs">
+              <div className="flex items-center justify-between border-b border-stone-200/70 pb-2">
+                <span className="font-semibold text-stone-800 inline-flex items-center gap-1.5">
+                  <BriefcaseIcon className="w-3.5 h-3.5 text-stone-500" />
+                  <span>About the Job (Full Description)</span>
+                </span>
+                <span className="text-[11px] font-medium text-stone-400">
+                  {selectedJobDetails.fullJobDescription ? 'Scraped Posting' : 'Summary'}
+                </span>
+              </div>
+              <div className="text-stone-700 leading-relaxed whitespace-pre-line max-h-72 overflow-y-auto pr-1 text-xs select-text">
+                {selectedJobDetails.fullJobDescription || selectedJobDetails.geminiSummary}
+              </div>
             </div>
 
             {/* 100-Point Score Breakdown */}
@@ -2298,7 +2443,7 @@ export function LeadAgentView({ onBackToChat, onOpenSidebar }: LeadAgentViewProp
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 shadow-xs transition"
               >
-                <span>Open Official Job Page</span>
+                <span>Open on {getJobSourceBadge(selectedJobDetails).shortLabel}</span>
                 <ExternalLinkIcon className="w-3.5 h-3.5" />
               </a>
             </div>

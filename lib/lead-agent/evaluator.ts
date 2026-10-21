@@ -98,9 +98,9 @@ export function detectJobLanguageAndCv(title: string, description: string): {
   }
 
   // Count common French stopwords in description that never occur in English
-  const frenchStopwords = descLower.match(/\b(vous|nous|pour|dans|avec|une|des|les|qui|sont|cette|votre|notre|au|aux|du|est|chez|selon)\b/g);
+  const frenchStopwords = descLower.match(/\b(vous|nous|pour|dans|avec|une|des|les|qui|sont|cette|votre|notre|au|aux|du|est|chez|selon|missions|poste|rejoindre|équipe|client|développement|conception|gestion|expérience|formation|bac|ingénieur|chargé|rémunération|mutuelle|avantages)\b/g);
   if (frenchStopwords && frenchStopwords.length >= 2) {
-    frCount += Math.min(frenchStopwords.length, 12);
+    frCount += Math.min(frenchStopwords.length * 2, 20);
   }
 
   let enCount = 0;
@@ -108,14 +108,14 @@ export function detectJobLanguageAndCv(title: string, description: string): {
     if (text.includes(m)) enCount += 2;
   }
 
-  const englishStopwords = descLower.match(/\b(we|you|our|with|about|and|the|for|have|will|team)\b/g);
+  const englishStopwords = descLower.match(/\b(we|our|with|about|and|the|have|will|team)\b/g);
   if (englishStopwords && englishStopwords.length >= 3) {
     enCount += Math.min(englishStopwords.length, 10);
   }
 
   // Decision rule:
-  // If French markers or stopwords dominate, or if statutory French marker (H/F, CDI) is present and English is not dominant:
-  if (frCount >= enCount || (hasStatutoryFrenchMarker && frCount > 1)) {
+  // If French prose or stopwords are detected (frCount >= 3) or statutory French markers are present:
+  if (frCount >= 3 || hasStatutoryFrenchMarker || hasExplicitFrenchTitle || frCount >= enCount) {
     return {
       recommendedCv: 'CV_FR.pdf',
       reason: 'The job posting and responsibilities are in French (French statutory/market context). CV_FR.pdf is recommended for French recruitment.',
@@ -285,6 +285,7 @@ export function evaluateJobHeuristicFallback(raw: RawDiscoveredJob): EvaluatedJo
     geminiSummary: `Live opportunity in ${raw.city} (${raw.region}) for ${raw.title} at ${raw.company}. Scored via local keyword rubric against ${matchedSkills
       .slice(0, 3)
       .join(', ')}.`,
+    fullJobDescription: raw.descriptionText || '',
     recommendedCv: cvInfo.recommendedCv,
     cvRecommendationReason: cvInfo.reason,
     threeRequirementsToEmphasize: [
@@ -294,6 +295,7 @@ export function evaluateJobHeuristicFallback(raw: RawDiscoveredJob): EvaluatedJo
     ],
     directApplicationUrl: raw.jobUrl,
     sourceUrl: raw.jobUrl,
+    source: raw.source || 'LinkedIn France',
     listingStatus: 'New',
     userStatus: 'inbox',
     scoredBy: 'heuristic',
@@ -482,6 +484,7 @@ Return ONLY a valid JSON object with these exact keys:
         ? parsed.potentialEligibilityConcerns
         : [],
       geminiSummary: parsed.geminiSummary || fallback.geminiSummary,
+      fullJobDescription: raw.descriptionText || fallback.fullJobDescription || '',
       recommendedCv: finalCv,
       cvRecommendationReason: finalCvReason,
       threeRequirementsToEmphasize:
@@ -491,6 +494,7 @@ Return ONLY a valid JSON object with these exact keys:
           : fallback.threeRequirementsToEmphasize,
       directApplicationUrl: raw.jobUrl,
       sourceUrl: raw.jobUrl,
+      source: raw.source || fallback.source || 'LinkedIn France',
       listingStatus: 'New',
       userStatus: 'inbox',
       scoredBy: 'gemini',

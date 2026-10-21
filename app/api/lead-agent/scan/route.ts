@@ -5,6 +5,7 @@ import {
   RawDiscoveredJob,
   searchLinkedInPublicJobsFrance,
 } from '@/lib/lead-agent/linkedin-scraper';
+import { searchWttjPublicJobsFrance } from '@/lib/lead-agent/wttj-scraper';
 import {
   computeCanonicalJobKey,
   evaluateDiscoveredJobWithGemini,
@@ -53,23 +54,31 @@ async function executeFranceJobDiscovery(apiKey?: string, customQueries?: string
     }
   };
 
-  // Phase 1: Nationwide France search (Past 24h primary, fallback to max 3-4 days r345600)
+  // Phase 1: Nationwide France search (Past 24h primary, fallback to max 2 days r172800)
   for (const query of queriesToRun) {
     let found = await searchLinkedInPublicJobsFrance(query, 'r86400', 3, 'France');
     if (found.length < 2) {
-      const fallbackFourDays = await searchLinkedInPublicJobsFrance(
+      const fallbackTwoDays = await searchLinkedInPublicJobsFrance(
         query,
-        'r345600',
+        'r172800',
         3,
         'France'
       );
-      found = [...found, ...fallbackFourDays];
+      found = [...found, ...fallbackTwoDays];
     }
     addUniqueJobs(found);
+
+    // Welcome to the Jungle France search (Startup & scale-up tech jobs, <= 2 days max)
+    try {
+      const wttjFound = await searchWttjPublicJobsFrance(query, 2);
+      addUniqueJobs(wttjFound);
+    } catch (wttjErr) {
+      console.warn('WTTJ scan fallback for query:', query, wttjErr);
+    }
   }
 
   // Phase 2: Multi-Region France Sweep (Lyon, Nantes, Bordeaux, Toulouse, Lille, Rennes, Nice)
-  // Ensures regional French hubs are discovered alongside Paris (24h primary -> 3-4 days max)
+  // Ensures regional French hubs are discovered alongside Paris (24h primary -> 2 days max)
   const regionalHubs = FRANCE_LOCATIONS.slice(1);
   const primaryEnglishQuery = queriesToRun[0] || 'Software Engineer React AI';
 
@@ -83,7 +92,7 @@ async function executeFranceJobDiscovery(apiKey?: string, customQueries?: string
     if (regionalFound.length === 0) {
       regionalFound = await searchLinkedInPublicJobsFrance(
         primaryEnglishQuery,
-        'r345600',
+        'r172800',
         2,
         regionalLoc
       );
@@ -132,8 +141,8 @@ async function executeFranceJobDiscovery(apiKey?: string, customQueries?: string
   const newCount = newlyEvaluated.length - upgradedCount;
   const summary =
     newCount > 0 || upgradedCount > 0
-      ? `Discovered ${newCount} fresh jobs${upgradedCount > 0 ? ` & upgraded ${upgradedCount} existing jobs with Gemini AI` : ''} across All France (24h to 4d max • ${evaluationMode}).`
-      : `Scanned All France (Paris + 7 regional hubs, <= 4 days old). All fresh listings are already in your dashboard.`;
+      ? `Discovered ${newCount} fresh jobs${upgradedCount > 0 ? ` & upgraded ${upgradedCount} existing jobs with Gemini AI` : ''} across LinkedIn & Welcome to the Jungle (24h to 2d max • ${evaluationMode}).`
+      : `Scanned LinkedIn & Welcome to the Jungle across All France (<= 2 days old). All fresh listings are already in your dashboard.`;
 
   const stored = await upsertEvaluatedJobs(newlyEvaluated, summary);
 

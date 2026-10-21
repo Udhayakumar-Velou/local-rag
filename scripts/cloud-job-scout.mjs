@@ -44,8 +44,110 @@ const FRANCE_REGIONS = [
   'Nice, Provence-Alpes-Côte d’Azur, France',
 ];
 
-function stripHtml(html) {
-  return html
+const WTTJ_ALGOLIA_APP_ID = 'CSEKHVMS53';
+const WTTJ_ALGOLIA_SEARCH_KEYS = [
+  '4bd8f6215d0cc52b26430765769e65a0',
+  '0da4b6932dc42ab3d2c8ff4e201124d7',
+  'b2319fc93a201a039ff01d293d0d8bb7',
+];
+
+async function fetchWttjFrance(query, max = 3) {
+  const jobs = [];
+  for (const apiKey of WTTJ_ALGOLIA_SEARCH_KEYS) {
+    try {
+      const url = `https://${WTTJ_ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/wttj_jobs_production_fr/query`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'x-algolia-application-id': WTTJ_ALGOLIA_APP_ID,
+          'x-algolia-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Referer': 'https://www.welcometothejungle.com/',
+          'Origin': 'https://www.welcometothejungle.com',
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        body: JSON.stringify({
+          query,
+          hitsPerPage: max * 2,
+          filters: 'offices.country_code:FR',
+        }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const hits = data.hits || [];
+      const twoDaysAgoMs = Date.now() - 2 * 24 * 60 * 60 * 1000;
+
+      for (const hit of hits) {
+        const publishedAt = hit.published_at;
+        if (publishedAt) {
+          const pubMs = new Date(publishedAt).getTime();
+          if (pubMs < twoDaysAgoMs) continue;
+        }
+
+        const title = hit.name || '';
+        const company = hit.organization?.name || 'Company in France';
+        const office = (hit.offices && hit.offices[0]) || hit.office || {};
+        const city = office.city || 'Paris';
+
+        const profileText = hit.profile ? stripHtml(hit.profile) : '';
+        const contentText = hit.content ? stripHtml(hit.content) : '';
+        const summaryText = hit.summary ? stripHtml(hit.summary) : '';
+        const missionsText = hit.key_missions ? stripHtml(hit.key_missions) : '';
+        const fullDesc = [summaryText, missionsText, contentText, profileText].filter(Boolean).join('\n\n');
+
+        const companySlug = hit.organization?.slug || '';
+        const jobSlug = hit.slug || '';
+        const jobUrl =
+          companySlug && jobSlug
+            ? `https://www.welcometothejungle.com/fr/companies/${companySlug}/jobs/${jobSlug}`
+            : `https://www.welcometothejungle.com/fr/jobs?query=${encodeURIComponent(title)}`;
+
+        const objectId = hit.objectID || hit.id || `${companySlug}-${jobSlug}`;
+
+        let employmentType = 'CDI';
+        const contract = (hit.contract_type || '').toUpperCase();
+        if (contract === 'CDD') employmentType = 'CDD';
+        else if (contract === 'STAGE' || contract === 'INTERNSHIP') employmentType = 'Stage';
+        else if (contract === 'ALTERNANCE') employmentType = 'Alternance';
+        else if (contract === 'FREELANCE') employmentType = 'Freelance';
+
+        let workingArrangement = 'Hybrid';
+        const remote = (hit.remote || '').toUpperCase();
+        if (remote === 'FULL' || remote === 'YES') workingArrangement = 'Remote';
+        else if (remote === 'NO') workingArrangement = 'On-site';
+
+        jobs.push({
+          id: `wttj-${objectId}`,
+          title,
+          company,
+          city,
+          region: `${city}, France`,
+          postedAgo: publishedAt
+            ? `${Math.max(1, Math.floor((Date.now() - new Date(publishedAt).getTime()) / (1000 * 60 * 60 * 24)))} days ago`
+            : 'Recent',
+          jobUrl,
+          descriptionText: fullDesc,
+          employmentType,
+          seniorityLevel: hit.experience_level || 'Mid-level',
+          workingArrangement,
+          source: 'Welcome to the Jungle',
+        });
+        if (jobs.length >= max) break;
+      }
+      if (jobs.length > 0) return jobs;
+    } catch {
+      // try next key or continue
+    }
+  }
+  return jobs;
+}
+
+function stripHtml(input) {
+  if (!input) return '';
+  if (Array.isArray(input)) return input.map(stripHtml).filter(Boolean).join('\n');
+  if (typeof input === 'object') return Object.values(input).map(stripHtml).filter(Boolean).join(' ');
+  return String(input)
     .replace(/<[^>]+>/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&nbsp;/g, ' ')
@@ -63,13 +165,15 @@ function canonicalKey(company, title, city) {
   return `${c}::${t}::${l}`;
 }
 
-function isWithinFourDaysMax(postedAgoText) {
+function isWithinTwoDaysMax(postedAgoText) {
   const ago = (postedAgoText || '').toLowerCase();
   if (/\b(week|weeks|semaine|semaines|month|months|mois)\b/i.test(ago)) return false;
   const daysMatch = ago.match(/(\d+)\s*(?:day|days|jour|jours)/i);
-  if (daysMatch && parseInt(daysMatch[1], 10) > 4) return false;
+  if (daysMatch && parseInt(daysMatch[1], 10) > 2) return false;
   return true;
 }
+
+const isWithinFourDaysMax = isWithinTwoDaysMax;
 
 async function fetchLinkedInFrance(query, location = 'France', timeFilter = 'r86400') {
   const url = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(
@@ -108,6 +212,7 @@ async function fetchLinkedInFrance(query, location = 'France', timeFilter = 'r86
 
     jobs.push({
       id: `li-${jobId}`,
+      jobId,
       title,
       company,
       city,
@@ -117,6 +222,49 @@ async function fetchLinkedInFrance(query, location = 'France', timeFilter = 'r86
     });
   }
   return jobs;
+}
+
+async function fetchLinkedInJobDetails(jobId) {
+  try {
+    const detailUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${jobId}`;
+    const res = await fetch(detailUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
+    if (!res.ok) return { descriptionText: '', employmentType: 'CDI', seniorityLevel: 'Mid-level' };
+    const html = await res.text();
+    const descMatch1 = html.match(/<div class="[^"]*show-more-less-html__markup[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const descMatch2 = html.match(/<section class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/section>/i);
+    const descMatch3 = html.match(/<div class="[^"]*description__text[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const descMatch4 = html.match(/<div class="[^"]*decoratedJobPosting__description[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const rawMarkup =
+      (descMatch1 && descMatch1[1]) ||
+      (descMatch2 && descMatch2[1]) ||
+      (descMatch3 && descMatch3[1]) ||
+      (descMatch4 && descMatch4[1]) ||
+      '';
+    const descriptionText = rawMarkup ? stripHtml(rawMarkup).slice(0, 10000) : '';
+
+    let employmentType = 'CDI';
+    const empMatch =
+      html.match(/Employment type\s*<\/h3>\s*<span class="[^"]*description__job-criteria-text[^"]*">([^<]+)<\/span>/i) ||
+      html.match(/Type d’emploi\s*<\/h3>\s*<span class="[^"]*description__job-criteria-text[^"]*">([^<]+)<\/span>/i);
+    if (empMatch) employmentType = stripHtml(empMatch[1]);
+
+    let seniorityLevel = 'Mid-level';
+    const senMatch =
+      html.match(/Seniority level\s*<\/h3>\s*<span class="[^"]*description__job-criteria-text[^"]*">([^<]+)<\/span>/i) ||
+      html.match(/Niveau hiérarchique\s*<\/h3>\s*<span class="[^"]*description__job-criteria-text[^"]*">([^<]+)<\/span>/i);
+    if (senMatch) seniorityLevel = stripHtml(senMatch[1]);
+
+    return { descriptionText, employmentType, seniorityLevel };
+  } catch {
+    return { descriptionText: '', employmentType: 'CDI', seniorityLevel: 'Mid-level' };
+  }
 }
 
 async function runCloudScout() {
@@ -147,7 +295,7 @@ async function runCloudScout() {
   for (const q of queries) {
     let found = await fetchLinkedInFrance(q, 'France', 'r86400');
     if (found.length < 2) {
-      const fallback = await fetchLinkedInFrance(q, 'France', 'r345600');
+      const fallback = await fetchLinkedInFrance(q, 'France', 'r172800');
       found = [...found, ...fallback];
     }
     for (const item of found) {
@@ -158,13 +306,28 @@ async function runCloudScout() {
         discovered.push({ ...item, canonicalKey: key });
       }
     }
+
+    // Welcome to the Jungle France search (Startup & scale-up jobs)
+    try {
+      const wttjFound = await fetchWttjFrance(q, 2);
+      for (const item of wttjFound) {
+        const key = canonicalKey(item.company, item.title, item.city);
+        if (!existingIds.has(item.id) && !existingKeys.has(key)) {
+          existingIds.add(item.id);
+          existingKeys.add(key);
+          discovered.push({ ...item, canonicalKey: key });
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
   // Regional sweep across France
   for (const reg of FRANCE_REGIONS.slice(1)) {
     let regFound = await fetchLinkedInFrance(queries[0] || 'React AI', reg, 'r86400');
     if (regFound.length === 0) {
-      regFound = await fetchLinkedInFrance(queries[0] || 'React AI', reg, 'r345600');
+      regFound = await fetchLinkedInFrance(queries[0] || 'React AI', reg, 'r172800');
     }
     for (const item of regFound) {
       const key = canonicalKey(item.company, item.title, item.city);
@@ -179,18 +342,30 @@ async function runCloudScout() {
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
   const masterPrompt = settingsRow?.master_prompt || 'Evaluate job suitability against AI, React, TypeScript, and Python engineering profile in France.';
 
-  console.log(`[Cloud Job Scout] Found ${discovered.length} new unique listings across France (<= 4 days old).`);
+  console.log(`[Cloud Job Scout] Found ${discovered.length} new unique listings across France (<= 2 days old).`);
   for (let i = 0; i < discovered.slice(0, 8).length; i++) {
     const raw = discovered[i];
     if (i > 0 && geminiApiKey) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
-    // Comprehensive French statutory and linguistic detection
-    const isFrench =
-      /\b(h\/f|f\/h|h\/f\/x|cdi|cdd|stage|alternance|développeur|développeuse|ingénieur|ingénieure|concepteur|responsable|chargé)\b/i.test(raw.title) ||
-      /\b(h\/f|f\/h|h\/f\/x|cdi|cdd|stage|alternance|au sein de|nous recherchons|vos missions|notre équipe|profil recherché|conception|expérience|télétravail|maîtrise|entreprise|compétences|rémunération|mutuelle|avantages)\b/i.test(raw.descriptionText || '') ||
-      /\b(vous|nous|pour|dans|avec|une|des|les|qui|sont|cette|votre|notre)\b/i.test(raw.descriptionText || '');
+    // Fetch rich "About the job" description and metadata for LinkedIn jobs (WTTJ already provides full text)
+    if (raw.id.startsWith('li-')) {
+      const details = await fetchLinkedInJobDetails(raw.jobId || raw.id.replace('li-', ''));
+      raw.descriptionText = details.descriptionText || '';
+      if (details.employmentType) raw.employmentType = details.employmentType;
+      if (details.seniorityLevel) raw.seniorityLevel = details.seniorityLevel;
+    }
+
+    // Comprehensive French statutory and linguistic detection on the full job description
+    const descLower = (raw.descriptionText || '').toLowerCase();
+    const frenchStopwords = descLower.match(/\b(vous|nous|pour|dans|avec|une|des|les|qui|sont|cette|votre|notre|au|aux|du|est|chez|selon|missions|poste|rejoindre|équipe|client|développement|conception|gestion|expérience|formation|bac|ingénieur|chargé|rémunération|mutuelle|avantages)\b/g);
+    const hasFrenchMarker = (frenchStopwords && frenchStopwords.length >= 2) ||
+      /\b(au sein de|nous recherchons|vos missions|notre équipe|profil recherché|dans le cadre|participer à)\b/i.test(descLower);
+    const hasStatutoryFrench = /\b(h\/f|f\/h|h\/f\/x|cdi|cdd|stage|alternance)\b/i.test(raw.title + ' ' + descLower);
+    const hasFrenchTitle = /\b(développeur|développeuse|ingénieur|ingénieure|concepteur|responsable|chargé)\b/i.test(raw.title);
+
+    const isFrench = hasFrenchMarker || hasStatutoryFrench || hasFrenchTitle;
 
     let jobData = {
       id: raw.id,
@@ -199,10 +374,10 @@ async function runCloudScout() {
       city: raw.city,
       region: raw.region,
       country: 'France',
-      employmentType: 'CDI',
-      seniorityLevel: 'Mid-level',
+      employmentType: raw.employmentType || 'CDI',
+      seniorityLevel: raw.seniorityLevel || 'Mid-level',
       publicationDate: raw.postedAgo || 'Past 24h',
-      workingArrangement: 'Hybrid',
+      workingArrangement: raw.workingArrangement || 'Hybrid',
       remoteRestrictions: 'France',
       salary: 'Not disclosed',
       requiredLanguages: isFrench ? ['French', 'English'] : ['English'],
@@ -222,7 +397,8 @@ async function runCloudScout() {
       relevantProjects: ['RAG evaluation & FastAPI services'],
       missingOrWeakerRequirements: [],
       potentialEligibilityConcerns: [],
-      geminiSummary: `Discovered via scheduled cloud scout in ${raw.city} at ${raw.company}.`,
+      geminiSummary: `Discovered via ${raw.source || 'LinkedIn France'} in ${raw.city} at ${raw.company}.`,
+      fullJobDescription: raw.descriptionText,
       recommendedCv: isFrench ? 'CV_FR.pdf' : 'CV_EN.pdf',
       cvRecommendationReason: isFrench
         ? 'The job posting and responsibilities are in French (French statutory/market context).'
@@ -234,6 +410,7 @@ async function runCloudScout() {
       ],
       directApplicationUrl: raw.jobUrl,
       sourceUrl: raw.jobUrl,
+      source: raw.source || 'LinkedIn France',
       listingStatus: 'New',
       userStatus: 'inbox',
       scoredBy: 'heuristic',
@@ -247,7 +424,12 @@ Company: ${raw.company}
 Location: ${raw.city}, ${raw.region}
 Posted: ${raw.postedAgo}
 
-IMPORTANT: In France, technical job titles (e.g., "Senior Frontend Software Engineer ReactJS - Paris - H/F") are often in English even for French positions. If the job description is in French, or contains French statutory markers (H/F, CDI, etc.), you MUST set recommendedCv to "CV_FR.pdf". Only recommend "CV_EN.pdf" if the description is entirely in English prose.
+Job Description:
+"""
+${raw.descriptionText}
+"""
+
+IMPORTANT: In France, technical job titles (e.g., "AI Engineer - LLM & Agents IA", "Senior Frontend Software Engineer ReactJS") are commonly in English even for French companies. If the job description is in French, or contains French statutory markers (H/F, CDI, etc.), you MUST set recommendedCv to "CV_FR.pdf". Only recommend "CV_EN.pdf" if the description is genuinely and entirely written in English prose for an international English-speaking team.
 
 Return ONLY valid JSON with keys: overallScore, matchCategory, jobCategory, scoreBreakdown, strongestMatchingSkills, geminiSummary, recommendedCv, cvRecommendationReason, threeRequirementsToEmphasize.`;
 
@@ -312,7 +494,17 @@ Return ONLY valid JSON with keys: overallScore, matchCategory, jobCategory, scor
     );
   }
 
-  console.log('[Cloud Job Scout] Completed successfully.');
+  const nowIso = new Date().toISOString();
+  try {
+    await supabase.from('lead_agent_settings').update({
+      last_scanned_at: nowIso,
+      updated_at: nowIso,
+    }).eq('id', 'default');
+  } catch (err) {
+    // Non-fatal if column doesn't exist yet
+  }
+
+  console.log('[Cloud Job Scout] Completed successfully at', nowIso);
 }
 
 runCloudScout();

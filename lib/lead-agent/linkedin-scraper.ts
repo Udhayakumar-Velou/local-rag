@@ -1,8 +1,8 @@
 /**
  * Authorized Public Job Discovery for All of France
  * Queries LinkedIn's public guest job search endpoints across France (Paris + all regional hubs).
- * Strictly enforces recency: Past 24 hours primary (r86400), with a maximum fallback of 3–4 days (r345600).
- * Rejects any job older than 4 days.
+ * Strictly enforces recency: Past 24 hours primary (r86400), with a maximum fallback of 2 days (r172800).
+ * Rejects any job older than 2 days.
  */
 
 export interface RawDiscoveredJob {
@@ -45,7 +45,7 @@ export const FRANCE_LOCATIONS = [
   'Nice, Provence-Alpes-Côte d’Azur, France',
 ];
 
-function decodeHtmlEntities(text: string): string {
+export function decodeHtmlEntities(text: string): string {
   return text
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -57,9 +57,16 @@ function decodeHtmlEntities(text: string): string {
     .trim();
 }
 
-function stripHtmlTags(html: string): string {
+export function stripHtmlTags(input: any): string {
+  if (!input) return '';
+  if (Array.isArray(input)) {
+    return input.map((item) => stripHtmlTags(item)).filter(Boolean).join('\n');
+  }
+  if (typeof input === 'object') {
+    return Object.values(input).map((val) => stripHtmlTags(val)).filter(Boolean).join(' ');
+  }
   return decodeHtmlEntities(
-    html
+    String(input)
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
       .replace(/<\/li>/gi, '\n')
@@ -68,10 +75,10 @@ function stripHtmlTags(html: string): string {
 }
 
 /**
- * Checks if a job posting is strictly within the 4-day maximum age threshold.
- * Rejects jobs posted 5+ days ago, weeks ago, or months ago.
+ * Checks if a job posting is strictly within the 2-day maximum age threshold.
+ * Rejects jobs posted 3+ days ago, weeks ago, or months ago.
  */
-export function isWithinFourDaysMax(postedDateIso: string, postedAgoText: string): boolean {
+export function isWithinTwoDaysMax(postedDateIso: string, postedAgoText: string): boolean {
   const ago = (postedAgoText || '').toLowerCase();
 
   // Reject weeks or months immediately
@@ -79,11 +86,11 @@ export function isWithinFourDaysMax(postedDateIso: string, postedAgoText: string
     return false;
   }
 
-  // Check if "X days ago" or "il y a X jours" exceeds 4 days
+  // Check if "X days ago" or "il y a X jours" exceeds 2 days
   const daysMatch = ago.match(/(\d+)\s*(?:day|days|jour|jours)/i);
   if (daysMatch) {
     const days = parseInt(daysMatch[1], 10);
-    if (days > 4) return false;
+    if (days > 2) return false;
   }
 
   // Also check ISO date if valid
@@ -91,13 +98,16 @@ export function isWithinFourDaysMax(postedDateIso: string, postedAgoText: string
     const postedTime = new Date(`${postedDateIso}T12:00:00Z`).getTime();
     const nowTime = Date.now();
     const diffDays = (nowTime - postedTime) / (1000 * 60 * 60 * 24);
-    if (diffDays > 4.5) return false;
+    if (diffDays > 2.5) return false;
   }
 
   return true;
 }
 
-function parseFrenchLocation(rawLoc: string): { city: string; region: string } {
+// Backward-compatibility alias
+export const isWithinFourDaysMax = isWithinTwoDaysMax;
+
+export function parseFrenchLocation(rawLoc: string): { city: string; region: string } {
   const cleaned = rawLoc.replace(/,?\s*France$/i, '').trim();
   const parts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
 
@@ -182,9 +192,9 @@ function inferWorkingArrangement(title: string, description: string, location: s
 }
 
 /**
- * Fetches details for a specific LinkedIn public job ID
+ * Fetches rich details & full "About the job" text for a specific LinkedIn public job ID
  */
-async function fetchLinkedInJobDetails(jobId: string): Promise<{
+export async function fetchLinkedInJobDetails(jobId: string): Promise<{
   descriptionText: string;
   employmentType: string;
   seniorityLevel: string;
@@ -196,25 +206,42 @@ async function fetchLinkedInJobDetails(jobId: string): Promise<{
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
       },
-      signal: AbortSignal.timeout(7000),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
       return {
         descriptionText: '',
-        employmentType: 'Full-time / CDI',
+        employmentType: 'CDI / Full-time',
         seniorityLevel: 'Mid-level',
       };
     }
 
     const html = await res.text();
 
-    const descMatch = html.match(
+    const descMatch1 = html.match(
       /<div class="[^"]*show-more-less-html__markup[^"]*"[^>]*>([\s\S]*?)<\/div>/i
     );
-    const descriptionText = descMatch ? stripHtmlTags(descMatch[1]).slice(0, 4500) : '';
+    const descMatch2 = html.match(
+      /<section class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/section>/i
+    );
+    const descMatch3 = html.match(
+      /<div class="[^"]*description__text[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+    );
+    const descMatch4 = html.match(
+      /<div class="[^"]*decoratedJobPosting__description[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+    );
+
+    const rawMarkup =
+      (descMatch1 && descMatch1[1]) ||
+      (descMatch2 && descMatch2[1]) ||
+      (descMatch3 && descMatch3[1]) ||
+      (descMatch4 && descMatch4[1]) ||
+      '';
+
+    const descriptionText = rawMarkup ? stripHtmlTags(rawMarkup).slice(0, 10000) : '';
 
     let employmentType = 'CDI / Full-time';
     const empMatch =
@@ -257,13 +284,13 @@ async function fetchLinkedInJobDetails(jobId: string): Promise<{
 /**
  * Queries LinkedIn's public guest search API for jobs in a specific French location.
  * @param keywords Search query string
- * @param timeFilter 'r86400' (past 24h) or 'r345600' (past 4 days max)
+ * @param timeFilter 'r86400' (past 24h) or 'r172800' (past 2 days max)
  * @param maxPerQuery Max jobs to pull per query
  * @param location Target location in France (defaults to 'France')
  */
 export async function searchLinkedInPublicJobsFrance(
   keywords: string,
-  timeFilter: 'r86400' | 'r345600' = 'r86400',
+  timeFilter: 'r86400' | 'r172800' | 'r345600' = 'r86400',
   maxPerQuery = 3,
   location = 'France'
 ): Promise<RawDiscoveredJob[]> {
@@ -313,8 +340,8 @@ export async function searchLinkedInPublicJobsFrance(
       const postedDate = dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0];
       const postedAgo = dateMatch ? stripHtmlTags(dateMatch[2]) : 'Past 24h';
 
-      // Strictly enforce <= 4 days maximum age!
-      if (!isWithinFourDaysMax(postedDate, postedAgo)) {
+      // Strictly enforce <= 2 days maximum age!
+      if (!isWithinTwoDaysMax(postedDate, postedAgo)) {
         continue;
       }
 

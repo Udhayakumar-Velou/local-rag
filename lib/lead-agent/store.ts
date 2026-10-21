@@ -3,7 +3,7 @@ import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { EvaluatedJob } from './types';
 import { computeCanonicalJobKey } from './evaluator';
-import { isWithinFourDaysMax } from './linkedin-scraper';
+import { isWithinTwoDaysMax } from './linkedin-scraper';
 
 const STORE_FILE_PATH = path.join(process.cwd(), 'data', 'job-leads.json');
 
@@ -24,14 +24,14 @@ function getSupabaseServerClient() {
 }
 
 /**
- * Keeps saved/applied jobs forever, and keeps inbox jobs only if they are <= 4 days old
+ * Keeps saved/applied jobs forever, and keeps inbox jobs only if they are <= 2 days old
  */
 function pruneStaleInboxJobs(jobs: EvaluatedJob[]): EvaluatedJob[] {
   return jobs.filter((job) => {
     if (job.userStatus === 'saved' || job.userStatus === 'applied' || job.userStatus === 'interviewing') {
       return true;
     }
-    return isWithinFourDaysMax('', job.publicationDate);
+    return isWithinTwoDaysMax('', job.publicationDate);
   });
 }
 
@@ -87,8 +87,27 @@ export async function loadStoredJobs(): Promise<JobStoreState> {
           }))
         );
 
+        let settingsScanAt = '';
+        try {
+          const { data: sRow } = await supabase
+            .from('lead_agent_settings')
+            .select('last_scanned_at')
+            .eq('id', 'default')
+            .single();
+          if (sRow?.last_scanned_at) settingsScanAt = sRow.last_scanned_at;
+        } catch {}
+
+        const latestJobTime = data.reduce(
+          (max, r) => (!max || (r.updated_at && r.updated_at > max) ? r.updated_at : max),
+          ''
+        );
+
+        const candidates = [settingsScanAt, latestJobTime, localState.lastScanAt].filter(Boolean) as string[];
+        candidates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+        const effectiveLastScanAt = candidates[0] || null;
+
         const mergedState: JobStoreState = {
-          lastScanAt: localState.lastScanAt || data[0]?.updated_at || null,
+          lastScanAt: effectiveLastScanAt,
           lastScanSummary: localState.lastScanSummary,
           jobs: cloudJobs,
         };
@@ -156,7 +175,7 @@ export async function upsertEvaluatedJobs(
   const newlyAdded: EvaluatedJob[] = [];
 
   for (const job of incomingJobs) {
-    if (!isWithinFourDaysMax('', job.publicationDate)) {
+    if (!isWithinTwoDaysMax('', job.publicationDate)) {
       continue;
     }
     const canonicalKey = computeCanonicalJobKey(job.companyName, job.exactJobTitle, job.city);
@@ -212,7 +231,7 @@ export async function upsertEvaluatedJobs(
     lastScanAt: nowIso,
     lastScanSummary:
       scanSummary ||
-      `Added ${addedCount} fresh jobs in France (<= 4 days old, ${skippedCount} duplicates skipped).`,
+      `Added ${addedCount} fresh jobs in France (<= 2 days old, ${skippedCount} duplicates skipped).`,
     jobs: allJobs,
   };
 
